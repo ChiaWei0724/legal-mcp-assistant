@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+
+# Environment Variables (最重要！保護你的 Key)
+.env
+.env.local
+.env.*
+
+# Node.js (前端依賴包，這很大，不需要上傳)
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# Cursor/VS Code
+.vscode/
+
+# Vector DB (本地向量資料庫檔案)
+chroma_db/
+vector_db/
