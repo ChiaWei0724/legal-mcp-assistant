@@ -7,3 +7,5 @@ google-generativeai
 rank_bm25
 jieba
 numpy
+beautifulsoup4
+requests
