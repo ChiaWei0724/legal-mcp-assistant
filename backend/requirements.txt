@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-dotenv
+mcp
+chromadb
+google-generativeai
+rank_bm25
+jieba
+numpy
