@@ -144,10 +144,11 @@ def hybrid_search(query: str):
     print(f"🏆 最終前 3 名: {[item['id'] for item in final_docs[:3]]}")
     return "\n\n".join([item['text'] for item in final_docs[:15]])
 
+# --- 修改 query_gemini_rag 函式 (幽默與案例版) ---
 def query_gemini_rag(user_question: str):
     print(f"👤 使用者: {user_question}")
 
-    # Step 1: AI 改寫 (修錯字、補主詞)
+    # Step 1: AI 翻譯官 (保持不變)
     rewrite_model = genai.GenerativeModel('gemini-2.0-flash')
     rewrite_prompt = f"""
     請將使用者問題改寫為精準的法律搜尋字串。
@@ -159,32 +160,42 @@ def query_gemini_rag(user_question: str):
     rewritten_query = rewrite_model.generate_content(rewrite_prompt).text.strip()
     print(f"✨ AI 改寫: {rewritten_query}")
 
-    # Step 2: 搜尋
+    # Step 2: 搜尋 (保持不變)
     context_text = hybrid_search(rewritten_query)
     
     if not context_text:
-        context_text = "無相關法條。"
+        context_text = "目前資料庫中無相關法條。"
 
-    # Step 3: 生成回答 (加入中文數字轉換指令)
+    # Step 3: 生成回答 (✨ 重點修改：加入幽默人設與案例要求)
     system_prompt = f"""
-    你是一位專業的台灣法律 AI 顧問。
+    你是一位**幽默風趣、說話直白，但專業度滿分**的台灣法律 AI 顧問。
+    你的任務是將艱澀的法律條文，翻譯成連小學生都聽得懂的白話文，並且喜歡用**生活化的比喻**來解釋。
     
-    【相關法規】：
+    【相關法規資料庫】：
     {context_text}
     
     【使用者問題】：
-    {user_question} (意圖: {rewritten_query})
+    {user_question}
     
-    【回答規則 (Markdown)】：
-    1. **中文數字轉換**：法規中的金額常寫成「一千八百元」，請你轉換為「1800元」顯示，方便閱讀。
-    2. **直接回答**：第一行直接給出重點（金額、刑期）。
-    3. **主動列舉**：若未指定車種，請列出「機車」與「汽車」的個別罰則。
-    4. **引用法條**：法規名稱與條號需用 **粗體**。
-    5. **條列式分析**：使用 Bullet points。
+    【回答規則 (請嚴格遵守 Markdown 格式)】：
+    1. **結論先行 (重點高亮)**：第一行直接給出答案（金額、刑期），並用 **粗體** 標示重點。
+    2. **白話文解釋 (神比喻)**：
+       - 請用「**簡單來說**」開頭，解釋這條法律在幹嘛。
+       - **必須使用一個「生活比喻」**（例如：把「簽契約」比喻成「訂外送」，把「侵權」比喻成「弄壞別人的玩具」）。讓使用者會心一笑。
+    3. **情境模擬 (小劇場)**：
+       - 請創造一個簡短的案例（例如：「假設張三今天...」），說明在這種情況下會發生什麼事，讓使用者更有帶入感。
+    4. **引用法條**：列出依據的法條名稱與條號，並用 **粗體**。
+    5. **條列式分析**：若有罰則細項（如機車/汽車），請條列清楚。
     6. **免責聲明**：最後加上引用區塊。
+    
+    語氣要求：專業中帶點幽默，溫暖且好懂，不要像機器人。
     """
 
-    answer_model = genai.GenerativeModel('gemini-2.0-flash') 
+    # generation_config 設定 temperature=0.7 讓它稍微有創意一點 (預設通常較低)
+    answer_model = genai.GenerativeModel(
+        'gemini-2.0-flash',
+        generation_config=genai.GenerationConfig(temperature=0.7) 
+    )
     response = answer_model.generate_content(system_prompt)
     return response.text
 
