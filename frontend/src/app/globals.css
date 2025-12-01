@@ -6,6 +6,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  /* ... (Shadcn 變數保持預設) ... */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -118,33 +119,40 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* 移除 body 的 transition，交給 View Transition API 控制，避免打架 */
   }
 }
-/* --- 美化捲軸 (Custom Scrollbar) --- */
 
-/* 針對 Webkit 瀏覽器 (Chrome, Edge, Safari) */
-::-webkit-scrollbar {
-  width: 8px; /* 寬度變細 */
-  height: 8px;
+/* === View Transition API 設定 === */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent; /* 軌道背景透明 */
+/* 確保新視圖在最上層 */
+::view-transition-new(root) {
+  z-index: 2147483646;
+}
+::view-transition-old(root) {
+  z-index: 1;
 }
 
-::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.1); /* 拉桿顏色：半透明白 */
-  border-radius: 20px; /* 圓角 */
-  border: 2px solid transparent; /* 讓它看起來有點間距 */
-  background-clip: content-box;
+/* 讓暗黑模式切換也有一樣的層級邏輯 */
+.dark::view-transition-old(root) {
+  z-index: 1;
+}
+.dark::view-transition-new(root) {
+  z-index: 2147483646;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.3); /* 滑鼠移上去變亮 */
+/* Tooltip 最高層級 */
+.tooltip-content {
+  z-index: 9999 !important;
 }
 
-/* 針對 Firefox (選用) */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
-}
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background-color: rgba(156, 163, 175, 0.3); border-radius: 20px; }
+::-webkit-scrollbar-thumb:hover { background-color: rgba(156, 163, 175, 0.6); }

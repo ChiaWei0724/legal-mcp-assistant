@@ -1,78 +1,197 @@
 'use client';
 
-import { useState, type KeyboardEventHandler, useEffect } from "react";
+import { useState, type KeyboardEventHandler, useEffect, useRef, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import { useTheme } from "next-themes";
+import { flushSync } from "react-dom";
+import { createPortal } from "react-dom";
 import {
   Activity,
   BookOpenCheck,
   Bot,
-  MessageSquare,
   Network,
   SendHorizontal,
   Users,
   Sun,
-  Moon
+  Moon,
+  Sparkles,
+  Scale,
+  Smile,
+  PartyPopper,
+  Plus,
+  Trash2,
+  Hourglass,
+  ExternalLink,
+  Gavel,
+  AlertTriangle,
+  Tag,
+  Mic,
+  ChevronDown,
+  Check,
+  Copy,
+  CheckCircle2,
+  MicOff 
 } from "lucide-react";
+
+// --- 常數設定 ---
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+// --- 工具函數區 ---
+
+interface TooltipProps {
+  content: string;
+  rect: DOMRect | null;
+  onClose: () => void;
+  onMouseEnter: () => void;
+  linkUrl: string;
+}
+
+const PortalTooltip = ({ content, rect, onClose, onMouseEnter, linkUrl }: TooltipProps) => {
+  const [copied, setCopied] = useState(false);
+
+  // 安全檢查
+  if (!rect || typeof document === "undefined") return null;
+
+  // 1. 水平位置計算 (保持不變)
+  const tooltipWidth = 360; 
+  let left = rect.left + rect.width / 2 - tooltipWidth / 2;
+  if (left < 10) left = 10;
+  if (typeof window !== "undefined") {
+      if (left + tooltipWidth > window.innerWidth) {
+          left = window.innerWidth - tooltipWidth - 20;
+      }
+  }
+  
+  // 2. 垂直位置智慧判斷 (★ 新增邏輯 ★)
+  // 如果連結距離視窗頂部小於 450px，就改為顯示在下方，避免被切掉
+  const showBelow = rect.top < 450;
+
+  let top: number;
+  let transform: string;
+
+  if (showBelow) {
+      // 顯示在下方
+      top = rect.bottom + 10; // 連結底部 + 10px 間距
+      transform = 'translateY(0)'; // 正常往下長
+  } else {
+      // 顯示在上方 (預設)
+      top = rect.top - 10; // 連結頂部 - 10px 間距
+      transform = 'translateY(-100%)'; // 往上推 100% 高度
+  }
+  
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy', err);
+    }
+  };
+
+  return createPortal(
+    <div 
+      className="fixed z-[9999] w-[360px] flex flex-col bg-slate-800/95 backdrop-blur-xl rounded-xl shadow-2xl border border-white/10 animate-in fade-in zoom-in-95 duration-200"
+      // 動態應用計算好的位置
+      style={{ left: `${left}px`, top: `${top}px`, transform: transform }}
+      onMouseLeave={onClose}
+      onMouseEnter={onMouseEnter}
+    >
+      {/* 標題列 */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-slate-900/50 rounded-t-xl">
+         <span className="text-xs font-bold text-indigo-300 flex items-center gap-2">
+            <Scale className="w-3.5 h-3.5" /> 法規快覽
+         </span>
+         <div className="flex gap-2">
+            <button 
+                onClick={handleCopy}
+                className="flex items-center gap-1 text-[10px] bg-white/10 hover:bg-white/20 px-2 py-1 rounded text-slate-300 transition-colors"
+            >
+                {copied ? <CheckCircle2 className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                {copied ? "已複製" : "複製內文"}
+            </button>
+         </div>
+      </div>
+
+      {/* 內文 */}
+      <div className="p-4 max-h-[300px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
+        <div className="whitespace-pre-wrap text-sm leading-7 text-slate-200 text-justify font-sans">
+           {content}
+        </div>
+      </div>
+
+      {/* 底部連結 */}
+      <a 
+         href={linkUrl} 
+         target="_blank" 
+         rel="noreferrer" 
+         className="px-4 py-2 border-t border-white/10 text-indigo-300 text-[10px] flex items-center justify-end gap-1 hover:text-indigo-200 hover:bg-white/5 rounded-b-xl cursor-pointer transition-colors"
+      >
+         前往全國法規資料庫 <ExternalLink className="w-3 h-3" />
+      </a>
+
+      {/* --- 智慧調整的裝飾元件 --- */}
+
+      {/* 1. 透明橋接層 (防止滑鼠在移動過程中 Tooltip 消失) */}
+      <div 
+        className="absolute w-full h-6 bg-transparent"
+        style={showBelow ? { top: -20 } : { bottom: -20 }} // 如果顯示在下方，橋接層要在上面；反之亦然
+      ></div>
+
+      {/* 2. 小箭頭 (根據位置變換方向) */}
+      <div 
+        className={`absolute w-0 h-0 border-8 border-x-transparent ${
+            showBelow 
+            ? "border-b-slate-800/95 border-t-0 -top-2" // 顯示在下方時，箭頭指向上方 (放在頂部)
+            : "border-t-slate-800/95 border-b-0 -bottom-2" // 顯示在上方時，箭頭指向下方 (放在底部)
+        }`}
+        style={{ left: rect.left - left + rect.width/2 - 8 }} // 讓箭頭對齊連結中心
+      ></div>
+
+    </div>,
+    document.body
+  );
+};
+
+const extractTextFromNode = (node: any): string => {
+  if (!node) return "";
+  if (typeof node === "string") return node;
+  if (typeof node === "number") return node.toString();
+  if (Array.isArray(node)) return node.map(extractTextFromNode).join("");
+  if (node.props && node.props.children) return extractTextFromNode(node.props.children);
+  return "";
+};
+
+function generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+}
+
+// --- 介面定義 ---
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
 }
 
+interface AnalysisData {
+  domain: string;
+  risk_level: string;
+  keywords: string[];
+}
+
 type ViewState = "chat" | "team" | "info";
 type FontSize = "small" | "medium" | "large";
+type ChatStyle = "professional" | "general" | "humorous"; 
 
-const quickTopics = [
-  { label: "租屋糾紛", tone: "from-orange-500 to-rose-500" },
-  { label: "交通事故", tone: "from-amber-400 to-red-500" },
-  { label: "借貸糾紛", tone: "from-emerald-400 to-teal-500" },
-  { label: "網路誹謗", tone: "from-indigo-400 to-purple-600" },
-];
-
-const systemLogs = [
-  "RAG 向量檢索引擎已啟動",
-  "MCP Server 建立連線成功",
-  "最新判決資料庫完成同步",
-];
-
-const knowledgeStates = [
-  { label: "知識圖譜識別", value: "待命", icon: Network },
-  { label: "系統狀態", value: "穩定", icon: Activity },
-];
-
-// 👥 團隊成員資料 (根據提案書內容)
 const teamMembers = [
-  {
-    name: "龍禹丞",
-    role: "隊長 / 雲端架構",
-    desc: "資訊網路背景，掌握網路原理及架設，負責部署此專案到雲端主機以提供演示。",
-    color: "from-blue-500 to-cyan-500"
-  },
-  {
-    name: "陳嘉維",
-    role: "AI 提示工程師",
-    desc: "具備提示工程與語言模型調校經驗，負責優化大語言模型提示詞，提升輸出內容的準確率與語意一致性。",
-    color: "from-indigo-500 to-purple-600"
-  },
-  {
-    name: "胡允豪",
-    role: "後端開發 & MCP",
-    desc: "精通 Python 程式與 API 整合，負責串接對話介面與模型端服務（MCP），打造友善互動體驗。",
-    color: "from-emerald-500 to-teal-600"
-  },
-  {
-    name: "彭冠綸",
-    role: "領域專家 / 法規整合",
-    desc: "熟悉交通與民事司法流程，負責整合法規資料庫、驗證法律相關疑問。",
-    color: "from-orange-500 to-red-500"
-  },
-  {
-    name: "呂育昇",
-    role: "技術支援 / 爬蟲開發",
-    desc: "自學爬蟲背景，精通多種程式語言，負責提供技術支援與資料蒐集。",
-    color: "from-pink-500 to-rose-600"
-  }
+  { name: "龍禹丞", role: "隊長 / 雲端架構", desc: "資訊網路背景，掌握網路原理及架設，負責部署此專案到雲端主機以提供演示。", color: "from-blue-500 to-cyan-500" },
+  { name: "陳嘉維", role: "AI 提示工程師", desc: "具備提示工程與語言模型調校經驗，負責優化大語言模型提示詞，提升輸出內容的準確率與語意一致性。", color: "from-indigo-500 to-purple-600" },
+  { name: "胡允豪", role: "後端開發", desc: "精通 Python 程式與 API 整合，負責串接對話介面，打造友善互動體驗。", color: "from-emerald-500 to-teal-600" },
+  { name: "彭冠綸", role: "領域專家 / 法規整合", desc: "熟悉交通與民事司法流程，負責整合法規資料庫、驗證法律相關疑問。", color: "from-orange-500 to-red-500" },
+  { name: "呂育昇", role: "技術支援 / 爬蟲開發", desc: "自學爬蟲背景，精通多種程式語言，負責提供技術支援與資料蒐集。", color: "from-pink-500 to-rose-600" }
 ];
 
 export default function Home() {
@@ -80,13 +199,50 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [fontSize, setFontSize] = useState<FontSize>("medium"); 
+  const [fontSize, setFontSize] = useState<FontSize>("medium");
   
+  const [chatStyle, setChatStyle] = useState<ChatStyle>("general");
+  const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
+  const modeMenuRef = useRef<HTMLDivElement>(null);
+  
+  // 語音相關狀態 (改回原生 API 狀態管理)
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  const startInputRef = useRef(""); 
+
+  const [activeTooltip, setActiveTooltip] = useState<{content: string, rect: DOMRect, link: string} | null>(null);
+  const tooltipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<{id: string, title: string}[]>([]);
+  const [clientId, setClientId] = useState<string>("");
+  
+  const [analysis, setAnalysis] = useState<AnalysisData>({
+      domain: "等待分析",
+      risk_level: "未知",
+      keywords: ["AI", "法律", "諮詢"]
+  });
+
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+    let id = localStorage.getItem("legal_ai_client_id");
+    if (!id) {
+        id = generateUUID();
+        localStorage.setItem("legal_ai_client_id", id);
+    }
+    setClientId(id);
+    fetchSessions(id);
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (modeMenuRef.current && !modeMenuRef.current.contains(event.target as Node)) {
+        setIsModeMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const fontSizeConfig = {
@@ -95,45 +251,290 @@ export default function Home() {
     large: "text-xl leading-relaxed"
   };
 
+  const modeInfo = {
+    professional: { label: "專業律師模式", shortLabel: "專業律師", desc: "嚴肅客觀，使用法律術語", icon: Scale, color: "text-slate-800 dark:text-slate-200", bg: "bg-slate-500/10" },
+    general: { label: "一般民眾模式", shortLabel: "一般民眾", desc: "親切白話，適合日常諮詢", icon: Smile, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10" },
+    humorous: { label: "幽默風趣模式", shortLabel: "幽默風趣", desc: "鄉民梗，輕鬆好笑", icon: PartyPopper, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10" }
+  };
+
+  const getRiskColor = (level: string) => {
+      if (!level) return "text-slate-500";
+      if (level.includes("高")) return "text-red-500";
+      if (level.includes("中")) return "text-amber-500";
+      return "text-emerald-500";
+  };
+
+  // --- 核心：原生 Web Speech API 實作 (不依賴套件) ---
+  const toggleListening = () => {
+    if (isListening) {
+      // 停止錄音
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        setIsListening(false);
+      }
+      return;
+    }
+
+    // 開始錄音
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("您的瀏覽器不支援語音輸入功能，請使用 Chrome 或 Edge。");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'zh-TW'; 
+    recognition.continuous = true; // 設為 true 讓它可以一直聽
+    recognition.interimResults = true; // 開啟即時顯示
+
+    // 記住開始講話前，輸入框裡已經有的字
+    startInputRef.current = input;
+
+    recognition.onstart = () => {
+        setIsListening(true);
+    };
+
+    recognition.onresult = (event: any) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+      
+      // 這裡我們簡單地把「既有文字」+「目前辨識到的所有文字（包含未完成的）」接起來
+      // 為了避免字串重複堆疊，我們每次都從 startInputRef 重新計算
+      // 注意：這種寫法在 continuous=true 時需要一點技巧，我們這裡簡化處理：
+      // 每次 onresult 我們都只取當下的 interim，若是 final 則累加到 startInputRef
+      
+      if (finalTranscript) {
+          startInputRef.current += finalTranscript;
+      }
+      
+      setInput(startInputRef.current + interimTranscript);
+    };
+
+    recognition.onerror = (event: any) => {
+      if (event.error === 'no-speech') {
+          // 忽略沈默錯誤
+      } else {
+          console.error("語音識別錯誤:", event.error);
+          setIsListening(false);
+      }
+    };
+
+    recognition.onend = () => {
+      // 如果是非手動停止（例如沈默太久自動斷開），可以選擇自動重啟，或就讓它停
+      setIsListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    try {
+        recognition.start();
+    } catch (e) {
+        console.error("無法啟動語音", e);
+        setIsListening(false);
+    }
+  };
+
+  const getLawLink = (text: string) => {
+    const lawMap: Record<string, string> = {
+        "道路交通管理處罰條例": "K0040012", "刑法": "C0000001", "中華民國刑法": "C0000001", "民法": "B0000001", "刑事訴訟法": "C0010001", "民事訴訟法": "B0010001"
+    };
+    let pcode = ""; let flno = "";
+    const match = text.match(/(.+?)第(\d+)條/);
+    if (match) {
+        const name = match[1].trim(); flno = match[2];
+        for (const key in lawMap) { if (name.includes(key) || key.includes(name)) { pcode = lawMap[key]; break; } }
+    } else {
+        for (const key in lawMap) { if (text.includes(key)) { pcode = lawMap[key]; break; } }
+    }
+    if (pcode && flno) return `https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=${pcode}&flno=${flno}`;
+    else if (pcode) return `https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode=${pcode}`;
+    return `https://law.moj.gov.tw/Law/LawSearch.aspx?q=${encodeURIComponent(text)}`;
+  };
+
+  const handleTooltipEnter = (content: string, rect: DOMRect, link: string) => {
+    if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current);
+    setActiveTooltip({ content, rect, link });
+  };
+
+  const handleTooltipLeave = () => {
+    tooltipTimeoutRef.current = setTimeout(() => {
+        setActiveTooltip(null);
+    }, 400); 
+  };
+
+  const fetchSessions = async (cid: string) => {
+    if (!cid) return;
+    try {
+      const res = await fetch(`${API_URL}/sessions?client_id=${cid}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSessions(data);
+      }
+    } catch (e) { console.error("Failed to fetch sessions", e); }
+  };
+
+  const loadSession = async (id: string) => {
+    try {
+      setIsLoading(true); setSessionId(id); setCurrentView("chat");
+      const res = await fetch(`${API_URL}/sessions/${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(data.messages);
+        if (data.analysis) setAnalysis(data.analysis);
+      }
+    } finally { setIsLoading(false); }
+  };
+
+  const deleteSession = async (e: React.MouseEvent, id: string) => {
+      e.stopPropagation(); if(!confirm("確定刪除？")) return;
+      try {
+        await fetch(`${API_URL}/sessions/${id}`, { method: "DELETE" });
+        setSessions(prev => prev.filter(s => s.id !== id));
+        if (sessionId === id) startNewChat();
+      } catch (e) { console.error("Delete failed", e); }
+  };
+
+  const startNewChat = () => {
+    setSessionId(null); setMessages([]); setCurrentView("chat");
+    setAnalysis({ domain: "等待分析", risk_level: "未知", keywords: ["AI", "法律", "諮詢"] });
+  };
+
   const handleSend = async (text: string = input) => {
-    const trimmed = text.trim();
-    if (!trimmed || isLoading) return;
+    const trimmed = text.trim(); if (!trimmed || isLoading) return;
+    
+    // 如果正在語音輸入，先停止
+    if (isListening && recognitionRef.current) {
+        recognitionRef.current.stop();
+        setIsListening(false);
+    }
 
     if (currentView !== "chat") setCurrentView("chat");
-
     const userMessage: ChatMessage = { role: "user", content: trimmed };
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    setIsLoading(true);
-
+    setMessages((prev) => [...prev, userMessage]); setInput(""); setIsLoading(true);
+    setAnalysis(prev => ({ ...prev, domain: "AI 思考中...", risk_level: "評估中..." }));
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const res = await fetch(`${apiUrl}/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed }),
+      const res = await fetch(`${API_URL}/chat`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: trimmed, style: chatStyle, session_id: sessionId, client_id: clientId }),
       });
-
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const data: { reply: string } = await res.json();
+      const data = await res.json();
       setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
+      if (data.analysis) setAnalysis(data.analysis);
+      else setAnalysis({ domain: "等待分析", risk_level: "未知", keywords: [] });
+      if (!sessionId && data.session_id) { setSessionId(data.session_id); fetchSessions(clientId); }
     } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "❌ 後端連線失敗，請確認伺服器是否運行中。" },
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
+      setMessages((prev) => [ ...prev, { role: "assistant", content: "❌ 後端連線失敗，請確認伺服器是否運行中。" }, ]);
+      setAnalysis({ domain: "連線錯誤", risk_level: "未知", keywords: [] });
+    } finally { setIsLoading(false); }
   };
 
-  const handleKeyDown: KeyboardEventHandler<HTMLInputElement> = (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      void handleSend();
-    }
+  const handleKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (event) => {
+    if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleSend(); }
   };
+
+  const toggleTheme = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    const isDark = theme === 'dark'; const nextTheme = isDark ? "light" : "dark";
+    if (!(document as any).startViewTransition) { setTheme(nextTheme); return; }
+    const x = e.clientX; const y = e.clientY;
+    const endRadius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    const transition = (document as any).startViewTransition(() => { flushSync(() => { setTheme(nextTheme); }); });
+    await transition.ready;
+    const clipPath = [ `circle(0px at ${x}px ${y}px)`, `circle(${endRadius}px at ${x}px ${y}px)` ];
+    document.documentElement.animate( { clipPath: clipPath }, { duration: 800, easing: "ease-in", pseudoElement: "::view-transition-new(root)", } );
+  };
+
+  const ThemeToggle = () => {
+    if (!mounted) return <div className="w-16 h-8 bg-slate-200 rounded-full" />;
+    const isDark = theme === 'dark';
+    return (
+      <button onClick={toggleTheme} className={`relative inline-flex h-8 w-16 items-center rounded-full transition-colors duration-500 ease-in-out focus:outline-none shadow-inner border border-white/10 ${isDark ? 'bg-slate-800' : 'bg-blue-200'}`} aria-label="切換日夜模式">
+        <span className={`inline-flex h-6 w-6 transform rounded-full bg-white shadow-lg transition-all duration-500 items-center justify-center relative overflow-hidden ${isDark ? 'translate-x-9' : 'translate-x-1'}`}>
+           <Sun className={`absolute w-4 h-4 text-amber-500 transition-all duration-500 ease-in-out ${isDark ? 'opacity-0 rotate-180 scale-0' : 'opacity-100 rotate-0 scale-100'}`} strokeWidth={2.5} />
+           <Moon className={`absolute w-4 h-4 text-indigo-600 transition-all duration-500 ease-in-out ${isDark ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-180 scale-0'}`} strokeWidth={2.5} />
+        </span>
+      </button>
+    );
+  };
+
+  const markdownComponents = useMemo(() => ({
+    p: ({ children }: any) => <div className="mb-2 last:mb-0 leading-7 break-words whitespace-pre-wrap">{children}</div>,
+    a: ({ node, href, children, ...props }: any) => {
+        const hrefStr = href || "";
+        const isLawLink = hrefStr.startsWith("law://content/") || (!hrefStr.startsWith("http") && hrefStr.length > 5);
+        
+        // 使用自定義的遞迴函數提取純文字，避免 React Node 造成錯誤
+        const rawText = extractTextFromNode(children); 
+
+        if (isLawLink) {
+            let decodedContent = "";
+            try {
+                // 1. 先移除前綴
+                let rawContent = hrefStr.replace("law://content/", "");
+                
+                // 2. 嘗試解碼 (有些時候後端已經幫忙解碼了，這裡做雙重保險)
+                // 如果 rawContent 本身已經是中文，decodeURIComponent 也不會報錯
+                // 如果是 %E5... 則會被還原
+                decodedContent = decodeURIComponent(rawContent);
+
+            } catch (e) {
+                // 如果解碼失敗，就直接顯示原始字串，避免 crash
+                console.error("URL 解碼失敗", e);
+                decodedContent = "無法顯示條文內容，請點擊連結查看。";
+            }
+            
+            const realLink = getLawLink(rawText); 
+
+            return (
+                <span 
+                className="font-bold text-indigo-600 dark:text-amber-400 border-b-2 border-dashed border-indigo-300 dark:border-amber-500/50 hover:bg-indigo-50 dark:hover:bg-amber-400/10 px-1 rounded cursor-pointer transition-colors inline-block select-none"
+                // 關鍵：滑鼠移上去時，傳入解碼後的中文內容
+                onMouseEnter={(e) => { 
+                    const rect = e.currentTarget.getBoundingClientRect(); 
+                    handleTooltipEnter(decodedContent, rect, realLink); 
+                }}
+                onMouseLeave={handleTooltipLeave}
+                onClick={(e) => e.preventDefault()}
+                >
+                    📘 {children}
+                </span>
+            );
+        }
+        return <a href={href} className="text-blue-500 underline break-all hover:text-blue-600" target="_blank" {...props}>{children}</a>;
+    },
+    strong: ({node, ...props}: any) => <span className="font-bold text-indigo-600 dark:text-amber-400" {...props} />,
+    ul: (props: any) => <ul className="ml-5 list-disc space-y-2 my-2 text-slate-700 dark:text-slate-300" {...props} />,
+    li: (props: any) => <li className="pl-1" {...props} />,
+    h1: (props: any) => <h1 className="text-xl font-bold text-slate-900 dark:text-white my-3" {...props} />,
+    h2: (props: any) => <h2 className="text-lg font-bold text-slate-900 dark:text-white my-2" {...props} />,
+    blockquote: (props: any) => (
+      <div className="mt-6 p-4 bg-slate-100/50 backdrop-blur-sm dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-red-900/30 flex gap-3 items-start shadow-inner">
+          <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase tracking-wider">免責聲明</p>
+              <div className="text-sm text-slate-600 dark:text-slate-300 italic leading-relaxed break-words">{props.children}</div>
+          </div>
+      </div>
+    ),
+  }), []);
+
+  // 檢查瀏覽器是否支援語音 API (用於條件渲染)
+  // 這裡我們使用一個簡單的 helper function，因為 window 在 server 端不存在
+  const checkBrowserSupport = () => {
+      if (typeof window !== 'undefined') {
+          return !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+      }
+      return false;
+  };
+  
+  const browserSupportsSpeechRecognition = checkBrowserSupport();
 
   const renderMainContent = () => {
     switch (currentView) {
@@ -141,17 +542,11 @@ export default function Home() {
         return (
           <div className="flex flex-col gap-6 animate-in fade-in duration-500">
             <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-slate-900/50 p-8 shadow-sm">
-              <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-6 flex items-center gap-3">
-                <Users className="text-indigo-500 dark:text-indigo-400" /> 團隊成員
-              </h2>
-              <p className="text-slate-600 dark:text-slate-400 mb-8">我們是來自 NextWave 2025 的黑客松團隊 - 「張三」。</p>
-              
+              <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-6 flex items-center gap-3"><Users className="text-indigo-500 dark:text-indigo-400" /> 團隊成員</h2>
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {teamMembers.map((member) => (
                   <div key={member.name} className="p-6 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/5 hover:border-indigo-500/50 transition hover:shadow-lg hover:-translate-y-1">
-                    <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${member.color} mb-4 flex items-center justify-center text-xl font-bold text-white shadow-md`}>
-                      {member.name[0]}
-                    </div>
+                    <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${member.color} mb-4 flex items-center justify-center text-xl font-bold text-white shadow-md`}>{member.name[0]}</div>
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white">{member.name}</h3>
                     <p className="text-sm font-medium text-indigo-600 dark:text-indigo-300 mb-3">{member.role}</p>
                     <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{member.desc}</p>
@@ -166,22 +561,10 @@ export default function Home() {
         return (
           <div className="flex flex-col gap-6 animate-in fade-in duration-500">
             <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-slate-900/50 p-8 shadow-sm">
-              <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-3">
-                <BookOpenCheck className="text-emerald-500 dark:text-emerald-400" /> 作品說明
-              </h2>
+              <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-3"><BookOpenCheck className="text-emerald-500 dark:text-emerald-400" /> 作品說明</h2>
               <div className="space-y-6 text-slate-700 dark:text-slate-300 leading-relaxed">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">關於「今日張三又犯法了嗎？」</h3>
-                  <p>本系統結合生成式 AI 與法律資料庫，打造一個可用對話方式進行互動的智慧法律顧問。使用者可像與朋友聊天般提問，系統能以自然語言解析問題，結合法規與判例提供專業且幽默的回應。</p>
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">核心技術架構</h3>
-                  <ul className="list-disc list-inside space-y-2 ml-2">
-                    <li><span className="text-indigo-600 dark:text-indigo-300 font-medium">RAG 檢索增強生成</span>：結合 ChromaDB 向量資料庫與 BM25 關鍵字檢索，精準鎖定法條。</li>
-                    <li><span className="text-indigo-600 dark:text-indigo-300 font-medium">AI 查詢改寫</span>：使用 Gemini 2.0 Flash 自動修正錯字、補全主詞（如將「拒絕九策」修正為「拒絕酒測」）。</li>
-                    <li><span className="text-indigo-600 dark:text-indigo-300 font-medium">MCP 協定</span>：符合 Model Context Protocol 標準，具備未來擴充性。</li>
-                  </ul>
-                </div>
+                <div><h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">關於「今日張三又犯法了嗎？」</h3><p>本系統結合生成式 AI 與法律資料庫，打造一個可用對話方式進行互動的智慧法律顧問。</p></div>
+                <div><h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">核心技術架構</h3><ul className="list-disc list-inside space-y-2 ml-2"><li><span className="font-bold text-indigo-600 dark:text-indigo-400">RAG 雙軌檢索</span>：結合 ChromaDB 向量搜尋與 BM25 關鍵字搜尋。</li><li><span className="font-bold text-indigo-600 dark:text-indigo-400">AI 查詢改寫</span>：使用 Gemini 2.0 Flash 自動修正錯字。</li><li><span className="font-bold text-indigo-600 dark:text-indigo-400">互動式 UI</span>：提供即時的法條預覽與分析儀表板。</li></ul></div>
               </div>
             </div>
           </div>
@@ -189,77 +572,86 @@ export default function Home() {
 
       case "chat":
       default:
+        const CurrentModeIcon = modeInfo[chatStyle].icon;
+        const currentModeLabel = modeInfo[chatStyle].shortLabel;
         return (
-          <section className="flex flex-1 flex-col justify-between gap-6 animate-in fade-in duration-500">
-            <div className="rounded-3xl border border-slate-200 dark:border-white/5 bg-white/60 dark:bg-slate-900/30 p-6 shadow-sm">
-              <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
-                你的案件描述
-              </h3>
-              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                請用自然語句描述事件、涉及人員與時間地點，我會即時生成分析。
-              </p>
-
-              <div className="mt-4 max-h-[500px] min-h-[300px] space-y-4 overflow-y-auto rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-950/40 p-4">
+          // 減少 gap-4 -> gap-3，盡量把空間讓給 flex-1
+          <section className="flex flex-1 flex-col justify-between gap-3 animate-in fade-in duration-500 relative min-h-0">
+            <div className="rounded-3xl border border-slate-200 dark:border-white/5 bg-white/60 dark:bg-slate-900/30 p-2 md:p-4 shadow-sm relative flex-1 flex flex-col min-h-0">
+              <div className="flex-1 space-y-4 overflow-y-auto pr-2 pb-2 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-700 min-h-0">
                 {messages.length === 0 ? (
                   <div className="flex h-full flex-col items-center justify-center text-slate-400 dark:text-slate-500 opacity-60">
-                    <Bot className="h-12 w-12 mb-2" />
-                    <p>還沒有對話紀錄，試著問問看「闖紅燈罰多少？」</p>
+                    <Bot className="h-16 w-16 mb-4 text-indigo-200 dark:text-indigo-900/40" /><p className="text-lg font-medium">還沒有對話紀錄</p><p className="text-sm">試著問問看「闖紅燈罰多少？」</p>
                   </div>
                 ) : (
                   messages.map((msg, index) => (
-                    <div
-                      key={index}
-                      className={`flex w-full ${
-                        msg.role === "user" ? "justify-end" : "justify-start"
-                      }`}
-                    >
-                      <div
-                        className={`max-w-[85%] rounded-2xl px-5 py-4 shadow-sm ${fontSizeConfig[fontSize]} ${
-                          msg.role === "user"
-                            ? "bg-indigo-600 text-white"
-                            : "bg-white dark:bg-slate-800/90 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-white/5"
-                        }`}
-                      >
-                        {msg.role === "user" ? (
-                          msg.content
-                        ) : (
-                          <ReactMarkdown
-                            components={{
-                              strong: (props) => <span className="font-bold text-indigo-600 dark:text-amber-400" {...props} />,
-                              ul: (props) => <ul className="ml-5 list-disc space-y-2 my-2 text-slate-700 dark:text-slate-300" {...props} />,
-                              li: (props) => <li className="pl-1" {...props} />,
-                              h1: (props) => <h1 className="text-xl font-bold text-slate-900 dark:text-white my-3" {...props} />,
-                              h2: (props) => <h2 className="text-lg font-bold text-slate-900 dark:text-white my-2" {...props} />,
-                              blockquote: (props) => <blockquote className="mt-4 border-l-4 border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-900/50 p-3 italic text-slate-600 dark:text-slate-400 rounded-r-lg" {...props} />,
-                            }}
-                          >
-                            {msg.content}
-                          </ReactMarkdown>
-                        )}
+                    <div key={index} className={`flex w-full ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                      {/* 調整 padding: py-4 -> py-3 讓氣泡更緊湊 */}
+                      <div className={`relative w-fit min-w-0 max-w-[95%] md:max-w-[85%] rounded-2xl px-4 py-3 shadow-sm ${fontSizeConfig[fontSize]} ${msg.role === "user" ? "bg-indigo-600 text-white ml-auto" : "bg-white dark:bg-slate-800/90 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-white/5 mr-auto"} overflow-hidden break-words`}>
+                        {msg.role === "user" ? <div className="whitespace-pre-wrap break-words">{msg.content}</div> : <ReactMarkdown urlTransform={(url) => url} components={markdownComponents}>{msg.content}</ReactMarkdown>}
                       </div>
                     </div>
                   ))
                 )}
+                {isLoading && (
+                    <div className="flex w-full justify-start animate-in fade-in duration-300">
+                         <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-white/5 flex items-center gap-3 shadow-sm">
+                             <div className="relative"><Hourglass className="h-5 w-5 text-indigo-500 animate-spin duration-[2000ms]" /></div>
+                             <span className="text-sm text-slate-500 dark:text-slate-400 animate-pulse font-medium">AI 正在翻閱六法全書...</span>
+                         </div>
+                    </div>
+                )}
               </div>
 
-              <div className="mt-6 flex flex-col gap-4 rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-950/50 p-4 md:flex-row md:items-center shadow-sm">
-                <input
-                  type="text"
-                  placeholder="請用白話描述你的情況..."
-                  className="flex-1 border-0 bg-transparent text-base text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                />
-                <button
-                  type="button"
-                  onClick={() => handleSend()}
-                  disabled={isLoading}
-                  className="flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 shadow-md shadow-indigo-200 dark:shadow-none"
-                >
-                  <SendHorizontal className="h-4 w-4" />
-                  {isLoading ? "分析中..." : "送出分析"}
-                </button>
+              {/* 輸入框容器：大幅瘦身 */}
+              <div className="mt-2 relative shrink-0">
+                <div className={`rounded-3xl border transition-all duration-300 relative flex flex-col bg-white dark:bg-slate-950/80 ${isListening ? 'border-red-400 shadow-[0_0_15px_rgba(248,113,113,0.3)] ring-2 ring-red-400/20' : 'border-slate-200 dark:border-white/10 shadow-lg dark:shadow-black/50 focus-within:ring-2 focus-within:ring-indigo-500/20'}`}>
+                    {/* 輸入框高度由 min-h-100 改為 52，padding-bottom 由 16 改為 10 */}
+                    <textarea 
+                        value={input} 
+                        onChange={(e) => setInput(e.target.value)} 
+                        onKeyDown={handleKeyDown} 
+                        placeholder={isListening ? "正在聆聽中..." : "請用白話描述你的情況..."} 
+                        className="w-full bg-transparent border-0 px-5 pt-3 pb-10 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none resize-none min-h-[52px] rounded-3xl" 
+                        rows={1} 
+                    />
+                    {/* 工具列位置上移: bottom-3 -> bottom-2 */}
+                    <div className="absolute bottom-2 left-3 right-3 flex justify-between items-center">
+                        <div className="relative" ref={modeMenuRef}>
+                            <button onClick={() => setIsModeMenuOpen(!isModeMenuOpen)} className={`flex items-center gap-2 px-2 py-1 rounded-full text-xs font-semibold transition-all hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 ${isModeMenuOpen ? 'bg-slate-100 dark:bg-white/10' : ''}`}>
+                                <CurrentModeIcon className="w-3.5 h-3.5" /><span>{currentModeLabel}</span><ChevronDown className={`w-3 h-3 transition-transform ${isModeMenuOpen ? 'rotate-180' : ''}`} />
+                            </button>
+                            {isModeMenuOpen && (
+                                <div className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-200 dark:border-white/10 overflow-hidden animate-in fade-in zoom-in-95 duration-200 z-50">
+                                    <div className="p-2"><div className="px-3 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider">選擇模式</div>
+                                        {Object.entries(modeInfo).map(([key, info]) => {
+                                            const isSelected = chatStyle === key; const Icon = info.icon;
+                                            return (<button key={key} onClick={() => { setChatStyle(key as ChatStyle); setIsModeMenuOpen(false); }} className={`w-full flex items-start gap-3 px-3 py-3 rounded-xl text-left transition-colors ${isSelected ? 'bg-indigo-50 dark:bg-indigo-500/20' : 'hover:bg-slate-50 dark:hover:bg-white/5'}`}><Icon className={`w-5 h-5 mt-0.5 ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500'}`} /><div className="flex-1"><div className={`text-sm font-bold ${isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-200'}`}>{info.shortLabel}</div><div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{info.desc}</div></div>{isSelected && <Check className="w-4 h-4 text-indigo-600 dark:text-indigo-400 mt-1" />}</button>);
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                             {/* 語音按鈕：使用 mounted 避免 Hydration Error */}
+                             {mounted && browserSupportsSpeechRecognition ? (
+                                <button 
+                                    type="button" 
+                                    onClick={toggleListening} 
+                                    className={`p-2 rounded-full transition-all duration-300 ${isListening ? 'bg-red-500 text-white animate-pulse shadow-red-500/50 shadow-lg scale-110' : 'hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-slate-400'}`} 
+                                    title={isListening ? "停止錄音" : "語音輸入"}
+                                >
+                                    {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                                </button>
+                             ) : (
+                                <button type="button" className="p-2 rounded-full text-slate-300 dark:text-slate-600 cursor-not-allowed" title="您的瀏覽器不支援語音輸入或正在載入中"><Mic className="w-4 h-4" /></button>
+                             )}
+                             
+                             <button onClick={() => handleSend()} disabled={isLoading || !input.trim()} className={`p-2 rounded-full transition-all flex items-center justify-center ${input.trim() ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-500 active:scale-95' : 'bg-slate-100 dark:bg-white/5 text-slate-300 dark:text-slate-600 cursor-not-allowed'}`}><SendHorizontal className="h-4 w-4" /></button>
+                        </div>
+                    </div>
+                </div>
+                <div className="mt-1 text-center"><p className="text-[9px] text-slate-400 dark:text-slate-500">Gemini 可能會顯示不準確的資訊，請務必再次確認。</p></div>
               </div>
             </div>
           </section>
@@ -268,190 +660,61 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 px-4 py-10 text-slate-900 dark:text-slate-100 md:px-8 transition-colors duration-300">
-      <div className="mx-auto flex max-w-7xl flex-col gap-6 lg:flex-row">
-        
-        {/* 左側 Sidebar */}
-        <aside className="flex flex-col rounded-3xl border border-slate-200 dark:border-white/5 bg-white/80 dark:bg-slate-950/70 p-6 shadow-xl dark:shadow-black/40 backdrop-blur lg:w-72 transition-colors duration-300">
-          <div>
-            <p className="text-sm uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">
-              NextWave 2025
-            </p>
-            <h2 className="mt-3 text-2xl font-semibold text-slate-900 dark:text-slate-50">
-              今日張三又犯法了嗎？
-            </h2>
+    <div className="min-h-screen bg-slate-50 dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 px-4 py-4 text-slate-900 dark:text-slate-100 md:px-8 transition-colors duration-1000 relative">
+      <div className="mx-auto flex max-w-7xl flex-col gap-3 lg:flex-row relative z-0 h-[calc(100vh-2rem)]"> 
+        <div className="fixed top-6 right-6 z-[100] pointer-events-auto"><ThemeToggle /></div>
+        <aside className="flex flex-col rounded-3xl border border-slate-200 dark:border-white/5 bg-white/80 dark:bg-slate-950/70 p-5 shadow-xl dark:shadow-black/40 backdrop-blur lg:w-72 transition-colors duration-300 overflow-hidden h-full">
+          <div><p className="text-sm uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">NextWave 2025</p><h2 className="mt-3 text-xl font-bold text-slate-900 dark:text-slate-50 whitespace-nowrap">今日張三又犯法了嗎？</h2></div>
+          <button onClick={startNewChat} className="mt-4 mb-2 w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-bold text-white shadow-md transition hover:bg-indigo-500 active:scale-95"><Plus className="h-5 w-5" /> 開啟新對話</button>
+          <div className="flex-1 overflow-y-auto space-y-1 my-2 pr-1 min-h-0 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+             <p className="px-2 text-xs font-semibold text-slate-400 mb-1">歷史紀錄</p>
+             {sessions.length === 0 ? <p className="px-2 text-sm text-slate-500 italic">尚無對話</p> : sessions.map((session) => (
+                  <div key={session.id} className={`group flex items-center gap-2 rounded-lg px-3 py-2 transition ${sessionId === session.id ? "bg-indigo-100 dark:bg-indigo-500/30" : "hover:bg-slate-100 dark:hover:bg-white/5"}`}>
+                      <button onClick={() => loadSession(session.id)} className={`flex-1 text-left text-sm truncate ${sessionId === session.id ? "text-indigo-700 dark:text-indigo-200 font-medium" : "text-slate-600 dark:text-slate-400"}`}>{session.title}</button>
+                      <button onClick={(e) => deleteSession(e, session.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-100 text-slate-400 hover:text-red-500 transition"><Trash2 className="h-4 w-4" /></button>
+                  </div>
+             ))}
           </div>
-
-          <div className="mt-10 space-y-3">
-            <button
-              onClick={() => setCurrentView("chat")}
-              className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left text-lg transition active:scale-95 ${
-                currentView === "chat"
-                  ? "bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm dark:bg-indigo-600/20 dark:border-indigo-500/50 dark:text-white dark:shadow-[0_0_15px_rgba(99,102,241,0.3)]"
-                  : "border-transparent text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/10"
-              }`}
-            >
-              <Bot className={`h-5 w-5 ${currentView === "chat" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"}`} />
-              AI 法律諮詢
-            </button>
-
-            <button
-              onClick={() => setCurrentView("team")}
-              className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left text-lg transition active:scale-95 ${
-                currentView === "team"
-                  ? "bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm dark:bg-indigo-600/20 dark:border-indigo-500/50 dark:text-white dark:shadow-[0_0_15px_rgba(99,102,241,0.3)]"
-                  : "border-transparent text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/10"
-              }`}
-            >
-              <Users className={`h-5 w-5 ${currentView === "team" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"}`} />
-              團隊成員
-            </button>
-
-            <button
-              onClick={() => setCurrentView("info")}
-              className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left text-lg transition active:scale-95 ${
-                currentView === "info"
-                  ? "bg-indigo-50 border-indigo-200 text-indigo-700 shadow-sm dark:bg-indigo-600/20 dark:border-indigo-500/50 dark:text-white dark:shadow-[0_0_15px_rgba(99,102,241,0.3)]"
-                  : "border-transparent text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/10"
-              }`}
-            >
-              <BookOpenCheck className={`h-5 w-5 ${currentView === "info" ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"}`} />
-              作品說明
-            </button>
+          <div className="space-y-2 border-t border-slate-200 dark:border-white/10 pt-3 shrink-0">
+            <button onClick={() => setCurrentView("team")} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 transition"><Users className="h-4 w-4" /> 團隊成員</button>
+            <button onClick={() => setCurrentView("info")} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-white/5 transition"><BookOpenCheck className="h-4 w-4" /> 作品說明</button>
           </div>
-
-          <div className="mt-auto space-y-4">
-            {/* 字體大小切換 */}
+          <div className="mt-auto space-y-3 pt-3 shrink-0">
             <div className="rounded-2xl bg-slate-100 dark:bg-white/5 p-2">
-              <div className="flex justify-between items-center px-2 mb-2">
-                <span className="text-xs text-slate-500 dark:text-slate-400">字體大小</span>
-              </div>
+              <div className="flex justify-between items-center px-2 mb-1"><span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1"><Sparkles className="h-3 w-3" /> 字體大小</span></div>
               <div className="flex gap-2">
-                <button
-                  onClick={() => setFontSize("small")}
-                  className={`flex-1 rounded-xl py-2 text-xs font-bold transition ${fontSize === 'small' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-white/10'}`}
-                >
-                  A
-                </button>
-                <button
-                  onClick={() => setFontSize("medium")}
-                  className={`flex-1 rounded-xl py-2 text-sm font-bold transition ${fontSize === 'medium' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-white/10'}`}
-                >
-                  A+
-                </button>
-                <button
-                  onClick={() => setFontSize("large")}
-                  className={`flex-1 rounded-xl py-2 text-lg font-bold transition ${fontSize === 'large' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-white/10'}`}
-                >
-                  A++
-                </button>
+                <button onClick={() => setFontSize("small")} className={`flex-1 rounded-xl py-1.5 text-xs font-bold transition ${fontSize === 'small' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-white/10'}`}>A</button>
+                <button onClick={() => setFontSize("medium")} className={`flex-1 rounded-xl py-1.5 text-sm font-bold transition ${fontSize === 'medium' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-white/10'}`}>A+</button>
+                <button onClick={() => setFontSize("large")} className={`flex-1 rounded-xl py-1.5 text-lg font-bold transition ${fontSize === 'large' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-white/10'}`}>A++</button>
               </div>
             </div>
-
-            {/* 主題切換 */}
-            <div className="flex items-center justify-between rounded-2xl bg-slate-100 dark:bg-white/5 p-2">
-               {mounted && (
-                 <>
-                  <button 
-                    onClick={() => setTheme("light")}
-                    className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-2 text-sm font-medium transition ${theme === 'light' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
-                  >
-                    <Sun className="h-4 w-4" /> 亮色
-                  </button>
-                  <button 
-                    onClick={() => setTheme("dark")}
-                    className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-2 text-sm font-medium transition ${theme === 'dark' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
-                  >
-                    <Moon className="h-4 w-4" /> 深色
-                  </button>
-                 </>
-               )}
-            </div>
-
-            <div className="rounded-2xl border border-indigo-100 dark:border-white/5 bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-indigo-600 dark:via-indigo-500 dark:to-purple-600 p-4 shadow-sm dark:shadow-lg">
-              <p className="text-sm text-indigo-900 dark:text-white/80">RAG 資料庫狀態</p>
-              <p className="mt-2 text-2xl font-semibold tracking-tight text-indigo-700 dark:text-white">連線中</p>
-              <p className="text-sm text-indigo-500 dark:text-white/70">MCP Server · 待命</p>
+            <div className="rounded-2xl border border-indigo-100 dark:border-white/5 bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-indigo-600 dark:via-indigo-500 dark:to-purple-600 p-3 shadow-sm dark:shadow-lg">
+              <p className="text-xs text-indigo-900 dark:text-white/80">RAG 資料庫狀態</p><div className="mt-1 flex items-center gap-2"><span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span></span><p className="text-lg font-semibold tracking-tight text-indigo-700 dark:text-white animate-pulse">連線中</p></div>
             </div>
           </div>
         </aside>
-
-        {/* 右側主畫面 */}
-        <main className="flex flex-1 flex-col gap-6 rounded-3xl border border-slate-200 dark:border-white/5 bg-white/60 dark:bg-slate-950/60 p-8 shadow-xl dark:shadow-black/30 backdrop-blur transition-colors duration-300">
-          <div className="rounded-3xl border border-slate-200 dark:border-white/5 bg-white/80 dark:bg-slate-900/40 p-8 shadow-sm">
-            <p className="text-sm uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">
-              法律諮詢助手
-            </p>
-            <h1 className="mt-4 text-3xl font-semibold text-slate-900 dark:text-slate-50">
-              你好！我是你的 AI 法律助手
-            </h1>
-            <p className="mt-2 text-base text-slate-600 dark:text-slate-400">
-              別擔心法律太難懂，簡單描述你的狀況，我會根據最新判決與知識圖譜幫你分析。
-            </p>
-
-            <div className="mt-6 flex flex-wrap gap-3">
-              {quickTopics.map((topic) => (
-                <button
-                  key={topic.label}
-                  onClick={() => handleSend(`${topic.label}發生了什麼事？`)}
-                  className={`rounded-2xl bg-gradient-to-r ${topic.tone} px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:scale-105 hover:shadow-lg active:scale-95`}
-                >
-                  {topic.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {renderMainContent()}
-
-          {currentView === "chat" && (
-            <div className="grid gap-6 lg:grid-cols-2">
-              <div className="rounded-3xl border border-slate-200 dark:border-white/5 bg-white/60 dark:bg-slate-900/30 p-6 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
-                    系統運作日誌 (System Log)
-                  </h3>
-                  <MessageSquare className="h-4 w-4 text-slate-400" />
-                </div>
-                <div className="mt-4 space-y-4 text-sm text-slate-600 dark:text-slate-400">
-                  {systemLogs.map((log) => (
-                    <div
-                      key={log}
-                      className="rounded-2xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-slate-950/40 px-4 py-3"
-                    >
-                      {log}
-                    </div>
-                  ))}
+        <main className="flex flex-1 flex-col gap-3 rounded-3xl border border-slate-200 dark:border-white/5 bg-white/60 dark:bg-slate-900/60 p-3 md:p-5 shadow-xl dark:shadow-black/30 backdrop-blur transition-colors duration-500 h-full overflow-hidden">
+           {renderMainContent()}
+           {currentView === "chat" && (
+            // 壓縮分析區塊的高度
+            <div className="grid gap-3 lg:grid-cols-2 mt-auto shrink-0">
+              <div className="rounded-3xl border border-slate-200 dark:border-white/5 bg-white/60 dark:bg-slate-900/30 p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-2"><h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">AI 判讀分析</h3><Activity className="h-3 w-3 text-slate-400" /></div>
+                <div className="space-y-2">
+                   <div className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-950/40 rounded-lg border border-slate-200 dark:border-white/5"><span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1"><Gavel className="w-3 h-3" /> 領域</span><span className="text-xs font-bold text-slate-800 dark:text-white">{analysis.domain}</span></div>
+                   <div className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-950/40 rounded-lg border border-slate-200 dark:border-white/5"><span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> 風險</span><span className={`text-xs font-bold ${getRiskColor(analysis.risk_level)}`}>{analysis.risk_level}</span></div>
                 </div>
               </div>
-
-              <div className="rounded-3xl border border-slate-200 dark:border-white/5 bg-white/60 dark:bg-slate-900/30 p-6 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">
-                    知識圖譜識別
-                  </h3>
-                  <Network className="h-4 w-4 text-slate-400" />
-                </div>
-                <div className="mt-6 space-y-4">
-                  {knowledgeStates.map((item) => (
-                    <div
-                      key={item.label}
-                      className="flex items-center justify-between rounded-2xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-slate-950/40 px-4 py-3"
-                    >
-                      <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-                        <item.icon className="h-4 w-4 text-indigo-500 dark:text-indigo-300" />
-                        {item.label}
-                      </div>
-                      <span className="text-sm font-semibold text-slate-900 dark:text-white">
-                        {item.value}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+              <div className="rounded-3xl border border-slate-200 dark:border-white/5 bg-white/60 dark:bg-slate-900/30 p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-2"><h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">知識圖譜識別</h3><Network className="h-3 w-3 text-slate-400" /></div>
+                <div className="flex flex-wrap gap-1.5">{analysis.keywords.length > 0 ? (analysis.keywords.map((kw, idx) => (<span key={idx} className="px-2 py-1 text-[10px] font-medium rounded-md bg-indigo-50 text-indigo-600 border border-indigo-100 dark:bg-indigo-500/20 dark:text-indigo-200 dark:border-transparent flex items-center gap-1"><Tag className="w-2.5 h-2.5" /> {kw}</span>))) : (<span className="text-xs text-slate-500 italic">等待分析...</span>)}</div>
               </div>
             </div>
           )}
         </main>
+        {activeTooltip && (
+            <PortalTooltip content={activeTooltip.content} rect={activeTooltip.rect} linkUrl={activeTooltip.link} onMouseEnter={() => { if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current); }} onClose={() => setActiveTooltip(null)} />
+        )}
       </div>
     </div>
   );

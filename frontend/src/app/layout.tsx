@@ -32,7 +32,7 @@ export default function RootLayout({
         {/* 2. 用 ThemeProvider 包住 children，設定預設為 dark 但可切換 */}
         <ThemeProvider
             attribute="class"
-            defaultTheme="dark"
+            defaultTheme="light"
             enableSystem
             disableTransitionOnChange
           >
