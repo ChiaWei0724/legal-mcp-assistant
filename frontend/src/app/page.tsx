@@ -33,6 +33,14 @@ import {
   MicOff 
 } from "lucide-react";
 
+// --- 型別定義擴充 ---
+declare global {
+  interface Window {
+    webkitSpeechRecognition: any;
+    SpeechRecognition: any;
+  }
+}
+
 // --- 常數設定 ---
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -49,10 +57,8 @@ interface TooltipProps {
 const PortalTooltip = ({ content, rect, onClose, onMouseEnter, linkUrl }: TooltipProps) => {
   const [copied, setCopied] = useState(false);
 
-  // 安全檢查
   if (!rect || typeof document === "undefined") return null;
 
-  // 1. 水平位置計算 (保持不變)
   const tooltipWidth = 360; 
   let left = rect.left + rect.width / 2 - tooltipWidth / 2;
   if (left < 10) left = 10;
@@ -62,21 +68,15 @@ const PortalTooltip = ({ content, rect, onClose, onMouseEnter, linkUrl }: Toolti
       }
   }
   
-  // 2. 垂直位置智慧判斷 (★ 新增邏輯 ★)
-  // 如果連結距離視窗頂部小於 450px，就改為顯示在下方，避免被切掉
+  let top = rect.top - 10; 
+  
+  // 智慧位置調整
   const showBelow = rect.top < 450;
-
-  let top: number;
-  let transform: string;
+  let transform = 'translateY(-100%)';
 
   if (showBelow) {
-      // 顯示在下方
-      top = rect.bottom + 10; // 連結底部 + 10px 間距
-      transform = 'translateY(0)'; // 正常往下長
-  } else {
-      // 顯示在上方 (預設)
-      top = rect.top - 10; // 連結頂部 - 10px 間距
-      transform = 'translateY(-100%)'; // 往上推 100% 高度
+      top = rect.bottom + 10; 
+      transform = 'translateY(0)'; 
   }
   
   const handleCopy = async () => {
@@ -92,12 +92,10 @@ const PortalTooltip = ({ content, rect, onClose, onMouseEnter, linkUrl }: Toolti
   return createPortal(
     <div 
       className="fixed z-[9999] w-[360px] flex flex-col bg-slate-800/95 backdrop-blur-xl rounded-xl shadow-2xl border border-white/10 animate-in fade-in zoom-in-95 duration-200"
-      // 動態應用計算好的位置
       style={{ left: `${left}px`, top: `${top}px`, transform: transform }}
       onMouseLeave={onClose}
       onMouseEnter={onMouseEnter}
     >
-      {/* 標題列 */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-slate-900/50 rounded-t-xl">
          <span className="text-xs font-bold text-indigo-300 flex items-center gap-2">
             <Scale className="w-3.5 h-3.5" /> 法規快覽
@@ -112,15 +110,11 @@ const PortalTooltip = ({ content, rect, onClose, onMouseEnter, linkUrl }: Toolti
             </button>
          </div>
       </div>
-
-      {/* 內文 */}
       <div className="p-4 max-h-[300px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-600 scrollbar-track-transparent">
         <div className="whitespace-pre-wrap text-sm leading-7 text-slate-200 text-justify font-sans">
            {content}
         </div>
       </div>
-
-      {/* 底部連結 */}
       <a 
          href={linkUrl} 
          target="_blank" 
@@ -129,25 +123,8 @@ const PortalTooltip = ({ content, rect, onClose, onMouseEnter, linkUrl }: Toolti
       >
          前往全國法規資料庫 <ExternalLink className="w-3 h-3" />
       </a>
-
-      {/* --- 智慧調整的裝飾元件 --- */}
-
-      {/* 1. 透明橋接層 (防止滑鼠在移動過程中 Tooltip 消失) */}
-      <div 
-        className="absolute w-full h-6 bg-transparent"
-        style={showBelow ? { top: -20 } : { bottom: -20 }} // 如果顯示在下方，橋接層要在上面；反之亦然
-      ></div>
-
-      {/* 2. 小箭頭 (根據位置變換方向) */}
-      <div 
-        className={`absolute w-0 h-0 border-8 border-x-transparent ${
-            showBelow 
-            ? "border-b-slate-800/95 border-t-0 -top-2" // 顯示在下方時，箭頭指向上方 (放在頂部)
-            : "border-t-slate-800/95 border-b-0 -bottom-2" // 顯示在上方時，箭頭指向下方 (放在底部)
-        }`}
-        style={{ left: rect.left - left + rect.width/2 - 8 }} // 讓箭頭對齊連結中心
-      ></div>
-
+      <div className="absolute bottom-0 h-6 w-full translate-y-full bg-transparent" style={{ left: 0 }}></div>
+      <div className={`absolute w-0 h-0 border-8 border-x-transparent ${showBelow ? "border-b-slate-800/95 border-t-0 -top-2" : "border-t-slate-800/95 border-b-0 -bottom-2"}`} style={{ left: rect.left - left + rect.width/2 - 8 }}></div>
     </div>,
     document.body
   );
@@ -205,7 +182,6 @@ export default function Home() {
   const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
   const modeMenuRef = useRef<HTMLDivElement>(null);
   
-  // 語音相關狀態 (改回原生 API 狀態管理)
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
   const startInputRef = useRef(""); 
@@ -264,10 +240,8 @@ export default function Home() {
       return "text-emerald-500";
   };
 
-  // --- 核心：原生 Web Speech API 實作 (不依賴套件) ---
   const toggleListening = () => {
     if (isListening) {
-      // 停止錄音
       if (recognitionRef.current) {
         recognitionRef.current.stop();
         setIsListening(false);
@@ -275,7 +249,6 @@ export default function Home() {
       return;
     }
 
-    // 開始錄音
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       alert("您的瀏覽器不支援語音輸入功能，請使用 Chrome 或 Edge。");
@@ -284,10 +257,9 @@ export default function Home() {
 
     const recognition = new SpeechRecognition();
     recognition.lang = 'zh-TW'; 
-    recognition.continuous = true; // 設為 true 讓它可以一直聽
-    recognition.interimResults = true; // 開啟即時顯示
+    recognition.continuous = true; 
+    recognition.interimResults = true; 
 
-    // 記住開始講話前，輸入框裡已經有的字
     startInputRef.current = input;
 
     recognition.onstart = () => {
@@ -306,11 +278,6 @@ export default function Home() {
         }
       }
       
-      // 這裡我們簡單地把「既有文字」+「目前辨識到的所有文字（包含未完成的）」接起來
-      // 為了避免字串重複堆疊，我們每次都從 startInputRef 重新計算
-      // 注意：這種寫法在 continuous=true 時需要一點技巧，我們這裡簡化處理：
-      // 每次 onresult 我們都只取當下的 interim，若是 final 則累加到 startInputRef
-      
       if (finalTranscript) {
           startInputRef.current += finalTranscript;
       }
@@ -320,7 +287,6 @@ export default function Home() {
 
     recognition.onerror = (event: any) => {
       if (event.error === 'no-speech') {
-          // 忽略沈默錯誤
       } else {
           console.error("語音識別錯誤:", event.error);
           setIsListening(false);
@@ -328,7 +294,6 @@ export default function Home() {
     };
 
     recognition.onend = () => {
-      // 如果是非手動停止（例如沈默太久自動斷開），可以選擇自動重啟，或就讓它停
       setIsListening(false);
     };
 
@@ -409,7 +374,6 @@ export default function Home() {
   const handleSend = async (text: string = input) => {
     const trimmed = text.trim(); if (!trimmed || isLoading) return;
     
-    // 如果正在語音輸入，先停止
     if (isListening && recognitionRef.current) {
         recognitionRef.current.stop();
         setIsListening(false);
@@ -469,42 +433,24 @@ export default function Home() {
     a: ({ node, href, children, ...props }: any) => {
         const hrefStr = href || "";
         const isLawLink = hrefStr.startsWith("law://content/") || (!hrefStr.startsWith("http") && hrefStr.length > 5);
-        
-        // 使用自定義的遞迴函數提取純文字，避免 React Node 造成錯誤
         const rawText = extractTextFromNode(children); 
-
         if (isLawLink) {
             let decodedContent = "";
-            try {
-                // 1. 先移除前綴
+            try { 
+                // ★ 關鍵修正：解碼後端傳來的亂碼，變回中文
                 let rawContent = hrefStr.replace("law://content/", "");
-                
-                // 2. 嘗試解碼 (有些時候後端已經幫忙解碼了，這裡做雙重保險)
-                // 如果 rawContent 本身已經是中文，decodeURIComponent 也不會報錯
-                // 如果是 %E5... 則會被還原
-                decodedContent = decodeURIComponent(rawContent);
-
-            } catch (e) {
-                // 如果解碼失敗，就直接顯示原始字串，避免 crash
-                console.error("URL 解碼失敗", e);
-                decodedContent = "無法顯示條文內容，請點擊連結查看。";
+                decodedContent = decodeURIComponent(rawContent); 
+            } catch { 
+                decodedContent = hrefStr; 
             }
-            
             const realLink = getLawLink(rawText); 
-
             return (
                 <span 
                 className="font-bold text-indigo-600 dark:text-amber-400 border-b-2 border-dashed border-indigo-300 dark:border-amber-500/50 hover:bg-indigo-50 dark:hover:bg-amber-400/10 px-1 rounded cursor-pointer transition-colors inline-block select-none"
-                // 關鍵：滑鼠移上去時，傳入解碼後的中文內容
-                onMouseEnter={(e) => { 
-                    const rect = e.currentTarget.getBoundingClientRect(); 
-                    handleTooltipEnter(decodedContent, rect, realLink); 
-                }}
+                onMouseEnter={(e) => { const rect = e.currentTarget.getBoundingClientRect(); handleTooltipEnter(decodedContent, rect, realLink); }}
                 onMouseLeave={handleTooltipLeave}
                 onClick={(e) => e.preventDefault()}
-                >
-                    📘 {children}
-                </span>
+                >📘 {children}</span>
             );
         }
         return <a href={href} className="text-blue-500 underline break-all hover:text-blue-600" target="_blank" {...props}>{children}</a>;
@@ -525,8 +471,6 @@ export default function Home() {
     ),
   }), []);
 
-  // 檢查瀏覽器是否支援語音 API (用於條件渲染)
-  // 這裡我們使用一個簡單的 helper function，因為 window 在 server 端不存在
   const checkBrowserSupport = () => {
       if (typeof window !== 'undefined') {
           return !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
@@ -696,7 +640,6 @@ export default function Home() {
         <main className="flex flex-1 flex-col gap-3 rounded-3xl border border-slate-200 dark:border-white/5 bg-white/60 dark:bg-slate-900/60 p-3 md:p-5 shadow-xl dark:shadow-black/30 backdrop-blur transition-colors duration-500 h-full overflow-hidden">
            {renderMainContent()}
            {currentView === "chat" && (
-            // 壓縮分析區塊的高度
             <div className="grid gap-3 lg:grid-cols-2 mt-auto shrink-0">
               <div className="rounded-3xl border border-slate-200 dark:border-white/5 bg-white/60 dark:bg-slate-900/30 p-4 shadow-sm">
                 <div className="flex items-center justify-between mb-2"><h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">AI 判讀分析</h3><Activity className="h-3 w-3 text-slate-400" /></div>

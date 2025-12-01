@@ -115,14 +115,18 @@ def expand_synonyms(query: str) -> str:
         "罵人": "公然侮辱 誹謗 名譽",
         "恐嚇": "加害 生命 身體 自由",
         "騙錢": "詐欺 意圖 不法所有",
-        "殺": "殺人 生命",
+        "殺": "殺人 生命 傷害 致死",
+        "殺人": "刑法第271條 生命",
         "欠錢": "債務 清償 借貸",
         "賴帳": "債務不履行",
         "賠錢": "損害賠償",
-        # --- 新增以下關鍵字 ---
         "噪音": "喧囂 振動 妨害安寧",
         "吵": "喧囂 妨害安寧",
         "樓上": "近鄰 土地所有人",
+        "總統": "公務員 國家元首 內亂 外患",
+        "名人": "公眾人物 名譽",
+        "歌手": "公眾人物",
+        "演員": "公眾人物",
     }
     expanded = query
     for key, value in synonyms.items():
@@ -137,7 +141,7 @@ def hybrid_search(query: str):
     final_docs = []
     seen_ids = set()
     
-    # 1. BM25 關鍵字搜尋 (擴大範圍至 50)
+    # 1. BM25 關鍵字搜尋 (範圍擴大至 50)
     if bm25:
         tokenized_query = list(jieba.cut(expanded_query))
         bm25_results = bm25.get_top_n(tokenized_query, all_laws, n=50)
@@ -146,7 +150,7 @@ def hybrid_search(query: str):
                 final_docs.append({"text": doc['text'], "id": doc['id'], "score": 0.8})
                 seen_ids.add(doc['id'])
 
-    # 2. 向量語意搜尋 (擴大範圍至 50)
+    # 2. 向量語意搜尋 (範圍擴大至 50)
     vector_results = collection.query(query_texts=[expanded_query], n_results=50)
     
     if vector_results['documents'] and vector_results['documents'][0]:
@@ -168,7 +172,6 @@ def hybrid_search(query: str):
                 item['score'] += 0.3
 
     final_docs.sort(key=lambda x: x['score'], reverse=True)
-    # 回傳前 30 筆
     return "\n\n".join([item['text'] for item in final_docs[:30]])
 
 def query_gemini_rag(
@@ -238,11 +241,13 @@ def query_gemini_rag(
     1. **結論先行**：第一句話直接回答核心結果（罰多少錢？刑責為何？）。
     2. **情境案例**：{case_instruction}
     3. **詳細分析**：依據法條進行分析。
+       - 若使用者詢問特定身分，請明確指出法律之前人人平等，直接引用一般法條進行說明。
     4. **實務建議**：{advice_instruction} (這是最重要的部分，請務必列點說明)。
     5. **法律依據**：
        - 引用法條格式： `[**法規名稱第X條**](law://content/條文內容)`
        - **絕對禁止**：禁止 AI 自行編造連結內的條文內容。
-       - **強制規則**：小括號內的 `law://content/` 後面，**必須** 是來自上述 {reference_section_title} 中該法條的完整原文。如果參考資料中沒有該條文的完整內容，小括號內請填寫 `law://content/無完整條文內容`，不要嘗試憑記憶填充，以免產生錯誤資訊。
+       - **強制規則**：小括號內的 `law://content/` 後面，**必須** 是來自上述 {reference_section_title} 中該法條的完整原文。
+       - **缺漏處理**：若參考資料中沒有該條文完整內容，請填寫 `law://content/無完整條文內容`，但**中括號內仍須寫出正確的條號**。
 
     【強制要求：最末行輸出 JSON 區塊】
     - 回覆的最後一段必須完全符合以下格式：
@@ -272,18 +277,15 @@ def query_gemini_rag(
         # 移除 JSON 區塊
         reply_content = response_text[:json_match.start()].strip()
             
-    # 6. 法條連結處理 (★關鍵修正：不再強制轉成 %E6 亂碼，直接保留中文★)
-    law_pattern = re.compile(r'\[(?P<text>[^\]]+)\]\((?P<link>[^)]+)\)')
+    # 6. 法條連結處理 (★關鍵：使用 quote 編碼解決 Markdown 空格問題★)
+    law_pattern = re.compile(r'\[(?P<text>[^\]]+)\]\s*\((?P<link>law://content/[^)]+)\)')
 
     def encode_law(match: re.Match) -> str:
         text = match.group("text")
         link = match.group("link")
-        if not link.startswith("law://content/"): return match.group(0)
         
-        # 先把連結後的內容取出來
         raw_content = link.replace("law://content/", "", 1)
         
-        # 防止 AI 自己做了一次 encode，我們先嘗試 decode 回中文
         try:
             decoded_first = urllib.parse.unquote(raw_content)
         except:
@@ -292,22 +294,21 @@ def query_gemini_rag(
         if decoded_first == "無完整條文內容":
             return f"[{text}](law://content/暫無此條文的完整內容，請點擊連結前往全國法規資料庫查詢。)"
 
-        # ★ 修正點：不再使用 quote 轉碼，僅移除換行符號，保留中文原樣
-        # 這樣前端顯示時就會是 law://content/民法第123條...，可讀性高且不會亂碼
+        # 移除換行符號
         safe_content = decoded_first.replace("\n", "").replace("\r", "")
         
-        return f"[{text}](law://content/{safe_content})"
+        # ★ 關鍵：強制 URL Encode，這樣空格會變成 %20，括號變成 %28，Markdown 就會乖乖解析成連結
+        final_encoded = urllib.parse.quote(safe_content)
+        
+        return f"[{text}](law://content/{final_encoded})"
 
     reply_content = law_pattern.sub(encode_law, reply_content)
 
-    # 7. 最終處理：強制統一免責聲明 (★關鍵修正：強制清除舊的，補上新的★)
-    
-    # 先清除 AI 可能自己寫的各種變體
+    # 7. 最終處理：強制統一免責聲明
     reply_content = reply_content.replace("> 本回覆僅供參考，不代表正式法律意見。實際個案請諮詢專業律師。", "")
     reply_content = reply_content.replace("本回覆僅供參考，不代表正式法律意見。實際個案請諮詢專業律師。", "")
     reply_content = reply_content.strip()
 
-    # 強制加上標準格式
     disclaimer = "\n\n> 本回覆僅供參考，不代表正式法律意見。實際個案請諮詢專業律師。"
     reply_content += disclaimer
 
@@ -412,4 +413,4 @@ async def chat(request: ChatRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True) 
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
