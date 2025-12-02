@@ -5,6 +5,7 @@ import sqlite3
 import uuid
 import re
 import urllib.parse
+import base64
 from datetime import datetime
 from rank_bm25 import BM25Okapi
 from fastapi import FastAPI, HTTPException, Query
@@ -36,7 +37,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS sessions
                  (id TEXT PRIMARY KEY, client_id TEXT, title TEXT, created_at TIMESTAMP, last_analysis TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS messages
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, created_at TIMESTAMP)''')
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, role TEXT, content TEXT, analysis TEXT, created_at TIMESTAMP)''')
     conn.commit()
     conn.close()
 
@@ -127,6 +128,11 @@ def expand_synonyms(query: str) -> str:
         "名人": "公眾人物 名譽",
         "歌手": "公眾人物",
         "演員": "公眾人物",
+        "裸奔": "公然猥褻 妨害風化",
+        "脫褲子": "公然猥褻",
+        "捲走": "業務侵占 普通侵占 背信 詐欺",
+        "捲款": "業務侵占 背信",
+        "合夥": "合夥財產 背信 侵占",
     }
     expanded = query
     for key, value in synonyms.items():
@@ -141,7 +147,6 @@ def hybrid_search(query: str):
     final_docs = []
     seen_ids = set()
     
-    # 1. BM25 關鍵字搜尋 (範圍擴大至 50)
     if bm25:
         tokenized_query = list(jieba.cut(expanded_query))
         bm25_results = bm25.get_top_n(tokenized_query, all_laws, n=50)
@@ -150,7 +155,6 @@ def hybrid_search(query: str):
                 final_docs.append({"text": doc['text'], "id": doc['id'], "score": 0.8})
                 seen_ids.add(doc['id'])
 
-    # 2. 向量語意搜尋 (範圍擴大至 50)
     vector_results = collection.query(query_texts=[expanded_query], n_results=50)
     
     if vector_results['documents'] and vector_results['documents'][0]:
@@ -164,7 +168,6 @@ def hybrid_search(query: str):
                     if item['id'] == doc_id:
                         item['score'] += 0.5
 
-    # 3. 關鍵字加權
     keywords = list(jieba.cut(query))
     for item in final_docs:
         for kw in keywords:
@@ -181,7 +184,6 @@ def query_gemini_rag(
 ):
     print(f"👤 使用者: {user_question} | 模式: {style}")
 
-    # 1. 整理歷史紀錄
     history = history or []
     recent_history = history[-10:]
     history_lines = []
@@ -190,7 +192,6 @@ def query_gemini_rag(
         history_lines.append(f"{role_name}: {msg['content']}")
     history_text = "\n".join(history_lines) if history_lines else "（無可參考的歷史訊息）"
 
-    # 2. 搜尋 RAG
     rewrite_model = genai.GenerativeModel('gemini-2.0-flash')
     try:
         rewrite_prompt = f"請參考歷史，將使用者問題改寫為精準法律搜尋字串。歷史:{history_text} 問題:{user_question} 只輸出字串。"
@@ -205,7 +206,6 @@ def query_gemini_rag(
     
     reference_section_title = "【參考資料】"
 
-    # 3. 設定模式與語氣
     tone_instruction = ""
     case_instruction = ""  
     advice_instruction = "" 
@@ -223,7 +223,7 @@ def query_gemini_rag(
         case_instruction = "請舉一個【生活常見例子】（例如：在巷口擦撞機車...）來說明。"
         advice_instruction = "請列出 3 點【當下SOP】，教使用者第一時間該做什麼。"
 
-    # 4. 組合最終 Prompt
+    # Prompt
     final_prompt = f"""
     {system_role}
     語氣要求：{tone_instruction}
@@ -238,19 +238,19 @@ def query_gemini_rag(
     {user_question} (AI理解: {rewritten_query})
     
     【回答格式要求 (請嚴格遵守章節順序)】：
-    1. **結論先行**：第一句話直接回答核心結果（罰多少錢？刑責為何？）。
+    1. **結論先行**：第一句話直接回答核心結果。
     2. **情境案例**：{case_instruction}
     3. **詳細分析**：依據法條進行分析。
-       - 若使用者詢問特定身分，請明確指出法律之前人人平等，直接引用一般法條進行說明。
-    4. **實務建議**：{advice_instruction} (這是最重要的部分，請務必列點說明)。
-    5. **法律依據**：
-       - 引用法條格式： `[**法規名稱第X條**](law://content/條文內容)`
-       - **絕對禁止**：禁止 AI 自行編造連結內的條文內容。
-       - **強制規則**：小括號內的 `law://content/` 後面，**必須** 是來自上述 {reference_section_title} 中該法條的完整原文。
-       - **缺漏處理**：若參考資料中沒有該條文完整內容，請填寫 `law://content/無完整條文內容`，但**中括號內仍須寫出正確的條號**。
+    4. **實務建議**：{advice_instruction}
+    5. **法律依據** (★重要★)：
+       - 請列出參考法條，格式請**務必**使用以下 XML 標籤：
+       - <ref title="法規名稱+條號" content="條文完整內容" />
+       - 範例：`<ref title="民法第184條" content="因故意或過失..." />`
+       - **絕對禁止**使用 Markdown 連結格式。
+       - 若無完整內容，content 請填寫「無完整條文內容」。
 
     【強制要求：最末行輸出 JSON 區塊】
-    - 回覆的最後一段必須完全符合以下格式：
+    - 回覆的最後一段必須完全符合以下格式，不要在後面加字：
       ---JSON_START---
       {{
           "domain": "涉及法律領域",
@@ -263,53 +263,80 @@ def query_gemini_rag(
     answer_model = genai.GenerativeModel('gemini-2.0-flash')
     response_text = answer_model.generate_content(final_prompt).text
 
-    # 5. 解析 JSON 與內容
     reply_content = response_text
     analysis_data = {"domain": "分析中", "risk_level": "未知", "keywords": []}
 
+    # JSON 提取
     json_match = re.search(r"---JSON_START---(.*?)---JSON_END---", response_text, re.DOTALL)
+    if not json_match:
+        json_match = re.search(r"(\{[\s\S]*\"domain\"[\s\S]*\"risk_level\"[\s\S]*\})", response_text)
+
     if json_match:
         json_block = json_match.group(1).strip()
         try:
             analysis_data = json.loads(json_block)
-        except json.JSONDecodeError:
+        except:
             pass
-        # 移除 JSON 區塊
-        reply_content = response_text[:json_match.start()].strip()
-            
-    # 6. 法條連結處理 (★關鍵：使用 quote 編碼解決 Markdown 空格問題★)
-    law_pattern = re.compile(r'\[(?P<text>[^\]]+)\]\s*\((?P<link>law://content/[^)]+)\)')
+        
+        if "---JSON_START---" in response_text:
+             reply_content = response_text.split("---JSON_START---")[0].strip()
+        else:
+             reply_content = response_text.replace(json_match.group(0), "").strip()
 
-    def encode_law(match: re.Match) -> str:
+    reply_content = reply_content.replace("---JSON_START---", "").replace("---JSON_END---", "").strip()
+
+    # ★ 核心修正：美化版連結產生器 (無黑點，強制垂直排列) ★
+    def create_clean_link(title, content):
+        # 1. 清理標題：移除粗體、移除所有空格 (解決全形半形排版問題)
+        # "民 法 第 1 條" -> "民法第1條"
+        title = title.replace("**", "").replace(" ", "").strip()
+        
+        if content == "無完整條文內容":
+             content = "暫無此條文的完整內容，請點擊連結前往全國法規資料庫查詢。"
+
+        # 2. 清理內容
+        safe_content = content.replace("\n", "").replace("\r", "").strip()
+        
+        # 3. Base64 編碼
+        b64_bytes = base64.b64encode(safe_content.encode('utf-8'))
+        b64_str = b64_bytes.decode('utf-8')
+        
+        # 4. ★ 關鍵：使用 \n\n (雙換行) 強制分段，不用列表符號 ★
+        return f"\n\n[**{title}**](https://law.ai/view?data={b64_str})"
+
+    # 處理 <ref> 標籤
+    # 允許前面有 Markdown 條列符號 (*、-、+) 一起被吃掉，避免畫面殘留米字號
+    ref_pattern = re.compile(
+        r'[ \t]*[-*+]?\s*<ref\s+title="([^"]+)"\s+content="([^"]+)"\s*/>'
+    )
+    reply_content = ref_pattern.sub(
+        lambda m: create_clean_link(m.group(1), m.group(2)),
+        reply_content,
+    )
+
+    # 把只剩一個 * 或 - 的空行也清掉（避免舊紀錄或特殊情況）
+    reply_content = re.sub(
+        r'^\s*[\*\-]\s*$',
+        '',
+        reply_content,
+        flags=re.MULTILINE,
+    )
+    
+    # 處理舊 Markdown 格式 (備用)
+    legacy_pattern = re.compile(r'\[(?P<text>[^\]]+)\]\s*\((?P<link>law://[^)]+)\)')
+    def fix_legacy_link(match: re.Match) -> str:
         text = match.group("text")
         link = match.group("link")
-        
-        raw_content = link.replace("law://content/", "", 1)
-        
-        try:
-            decoded_first = urllib.parse.unquote(raw_content)
-        except:
-            decoded_first = raw_content
+        raw_content = link.replace("law://content/", "").replace("law://base64/", "")
+        try: raw_content = urllib.parse.unquote(raw_content)
+        except: pass
+        return create_clean_link(text, raw_content)
 
-        if decoded_first == "無完整條文內容":
-            return f"[{text}](law://content/暫無此條文的完整內容，請點擊連結前往全國法規資料庫查詢。)"
+    reply_content = legacy_pattern.sub(fix_legacy_link, reply_content)
 
-        # 移除換行符號
-        safe_content = decoded_first.replace("\n", "").replace("\r", "")
-        
-        # ★ 關鍵：強制 URL Encode，這樣空格會變成 %20，括號變成 %28，Markdown 就會乖乖解析成連結
-        final_encoded = urllib.parse.quote(safe_content)
-        
-        return f"[{text}](law://content/{final_encoded})"
-
-    reply_content = law_pattern.sub(encode_law, reply_content)
-
-    # 7. 最終處理：強制統一免責聲明
-    reply_content = reply_content.replace("> 本回覆僅供參考，不代表正式法律意見。實際個案請諮詢專業律師。", "")
-    reply_content = reply_content.replace("本回覆僅供參考，不代表正式法律意見。實際個案請諮詢專業律師。", "")
-    reply_content = reply_content.strip()
-
-    disclaimer = "\n\n> 本回覆僅供參考，不代表正式法律意見。實際個案請諮詢專業律師。"
+    # 強制統一免責聲明
+    reply_content = re.sub(r">?\s*本回覆僅供參考.*", "", reply_content).strip()
+    disclaimer = "\n\n\n> 本回覆僅供參考，不代表正式法律意見。實際個案請諮詢專業律師。"
     reply_content += disclaimer
 
     return {"reply": reply_content, "analysis": analysis_data}
@@ -353,8 +380,17 @@ def delete_session(session_id: str):
 def get_session_messages(session_id: str):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT role, content FROM messages WHERE session_id = ? ORDER BY id ASC", (session_id,))
-    messages = [{"role": row[0], "content": row[1]} for row in c.fetchall()]
+    c.execute("SELECT role, content, analysis FROM messages WHERE session_id = ? ORDER BY id ASC", (session_id,))
+    messages = []
+    for row in c.fetchall():
+        msg = {"role": row[0], "content": row[1]}
+        if row[2]:
+            try:
+                msg["analysis"] = json.loads(row[2])
+            except:
+                pass
+        messages.append(msg)
+    
     c.execute("SELECT last_analysis FROM sessions WHERE id = ?", (session_id,))
     row = c.fetchone()
     analysis = json.loads(row[0]) if row and row[0] else None
@@ -374,7 +410,6 @@ async def chat(request: ChatRequest):
         c.execute("INSERT INTO sessions (id, client_id, title, created_at, last_analysis) VALUES (?, ?, ?, ?, ?)", 
                   (session_id, request.client_id, title, created_at, "{}"))
     
-    # 讀取最近 10 則歷史紀錄
     c.execute(
         "SELECT role, content FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT 10",
         (session_id,)
@@ -383,18 +418,15 @@ async def chat(request: ChatRequest):
     history = [{"role": row[0], "content": row[1]} for row in reversed(rows)]
     
     try:
-        # 呼叫 query_gemini_rag
         result = query_gemini_rag(request.message, request.style, history)
         
         ai_reply = result["reply"]
         analysis_data = result["analysis"]
         
-        # 寫入訊息
         now = datetime.now().isoformat()
-        c.execute("INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)", (session_id, "user", request.message, now))
-        c.execute("INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)", (session_id, "assistant", ai_reply, now))
+        c.execute("INSERT INTO messages (session_id, role, content, analysis, created_at) VALUES (?, ?, ?, ?, ?)", (session_id, "user", request.message, None, now))
+        c.execute("INSERT INTO messages (session_id, role, content, analysis, created_at) VALUES (?, ?, ?, ?, ?)", (session_id, "assistant", ai_reply, json.dumps(analysis_data), now))
         
-        # 更新最後分析結果
         c.execute("UPDATE sessions SET last_analysis = ? WHERE id = ?", (json.dumps(analysis_data), session_id))
         
         conn.commit()
