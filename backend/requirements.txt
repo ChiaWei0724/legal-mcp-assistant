@@ -1,11 +1,11 @@
-fastapi                 # 後端 API 框架
-uvicorn                 # 伺服器執行器
-python-dotenv           # 讀取 .env 變數
-mcp                     # (若您有使用 Model Context Protocol)
-chromadb                # 向量資料庫
-google-generativeai     # Gemini API
-rank_bm25               # 關鍵字搜尋
-jieba                   # 中文斷詞
-numpy                   # 數學運算 (BM25 依賴)
-beautifulsoup4          # 爬蟲解析 (fetch_gov_data.py 用)
-requests                # 網路請求 (fetch_gov_data.py 用)
+fastapi
+uvicorn
+python-dotenv
+mcp
+chromadb
+google-generativeai
+rank_bm25
+jieba
+numpy
+beautifulsoup4
+requests

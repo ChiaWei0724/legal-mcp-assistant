@@ -575,7 +575,7 @@ export default function Home() {
                 <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-3"><BookOpenCheck className="text-emerald-500 dark:text-emerald-400" /> 作品說明</h2>
                 <div className="space-y-6 text-slate-700 dark:text-slate-300 leading-relaxed">
                     <div><h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">關於「今日張三又犯法了嗎？」</h3><p>本系統結合生成式 AI 與法律資料庫，打造一個可用對話方式進行互動的智慧法律顧問。</p></div>
-                    <div><h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">核心技術架構</h3><ul className="list-disc list-inside space-y-2 ml-2"><li><span className="font-bold text-indigo-600 dark:text-indigo-400">RAG 雙軌檢索</span>：結合 ChromaDB 向量搜尋與 BM25 關鍵字搜尋。</li><li><span className="font-bold text-indigo-600 dark:text-indigo-400">AI 查詢改寫</span>：使用 Gemini 2.0 Flash 自動修正錯字。</li><li><span className="font-bold text-indigo-600 dark:text-indigo-400">互動式 UI</span>：提供即時的法條預覽與分析儀表板。</li></ul></div>
+                    <div><h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">核心技術架構</h3><ul className="list-disc list-inside space-y-2 ml-2"><li><span className="font-bold text-indigo-600 dark:text-indigo-400">RAG 雙軌檢索</span>：結合 ChromaDB 向量搜尋與 BM25 關鍵字搜尋。</li><li><span className="font-bold text-indigo-600 dark:text-indigo-400">AI 查詢改寫</span>：使用 Gemini 2.5 Flash 自動修正錯字。</li><li><span className="font-bold text-indigo-600 dark:text-indigo-400">互動式 UI</span>：提供即時的法條預覽與分析儀表板。</li></ul></div>
                 </div>
                 </div>
             </div>

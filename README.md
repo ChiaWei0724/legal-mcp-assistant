@@ -8,7 +8,7 @@
 
 **「今日張三又犯法了嗎？」** 是一個專為台灣民眾設計的 **AI 法律諮詢輔助系統**。我們觀察到許多民眾（如租屋族、車禍當事人）在面臨法律糾紛時，常因法條艱澀或資訊不對稱而感到無助。
 
-本系統採用 **Google Gemini 2.0 Flash** 作為核心大腦，結合 **RAG (檢索增強生成)** 技術讀取最新的台灣法規（刑法、民法、道交條例）。有別於傳統聊天機器人，我們打造了 **Gemini 風格的沉浸式介面**，並提供 **即時語音輸入** 與 **視覺化分析儀表板**，提供即時、有憑有據且白話的法律分析。
+本系統採用 **Google Gemini 2.5 Flash** 作為核心大腦，結合 **RAG (檢索增強生成)** 技術讀取最新的台灣法規（刑法、民法、道交條例）。有別於傳統聊天機器人，我們打造了 **Gemini 風格的沉浸式介面**，並提供 **即時語音輸入** 與 **視覺化分析儀表板**，提供即時、有憑有據且白話的法律分析。
 
 ### 核心價值
 * **白話轉譯**：將複雜的法條轉換為一般人聽得懂的建議。
@@ -49,7 +49,7 @@
 * **Search Engine**: Hybrid Search (BM25 + Vector)
 
 ### AI Core (人工智慧核心)
-* **Model**: Google Gemini 2.0 Flash
+* **Model**: Google Gemini 2.5 Flash
 * **Technique**: RAG (Retrieval-Augmented Generation)
 * **Capabilities**: Query Rewriting (查詢改寫)、Context Awareness (多輪對話記憶)。
 

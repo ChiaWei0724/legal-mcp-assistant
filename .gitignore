@@ -27,3 +27,5 @@ Thumbs.db
 # Vector DB (本地向量資料庫檔案)
 chroma_db/
 vector_db/
+
+!backend/chroma_db/

@@ -196,7 +196,7 @@ def query_gemini_rag(
         history_lines.append(f"{role_name}: {msg['content']}")
     history_text = "\n".join(history_lines) if history_lines else "（無可參考的歷史訊息）"
 
-    rewrite_model = genai.GenerativeModel('gemini-2.0-flash')
+    rewrite_model = genai.GenerativeModel('gemini-2.5-flash')
     try:
         rewrite_prompt = f"請參考歷史，將使用者問題改寫為精準法律搜尋字串。歷史:{history_text} 問題:{user_question} 只輸出字串。"
         rewritten_query = rewrite_model.generate_content(rewrite_prompt).text.strip()
@@ -264,7 +264,7 @@ def query_gemini_rag(
       ---JSON_END---
     """
 
-    answer_model = genai.GenerativeModel('gemini-2.0-flash')
+    answer_model = genai.GenerativeModel('gemini-2.5-flash')
     response_text = answer_model.generate_content(final_prompt).text
 
     reply_content = response_text
