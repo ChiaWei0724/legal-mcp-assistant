@@ -79,7 +79,11 @@ else:
 app = FastAPI(title="Legal AI Assistant API")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",             # 本機開發用
+        "https://legal-mcp-assistant-weld.vercel.app",  # ⚠️ 請換成你 Vercel 實際的網址
+        # 如果有其他網域也加上去
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
