@@ -12,11 +12,11 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import chromadb
-from chromadb.utils import embedding_functions
 import google.generativeai as genai
 from dotenv import load_dotenv
 from pathlib import Path
 from typing import List, Optional, Dict, Any
+from sentence_transformers import SentenceTransformer
 
 # --- 1. 環境設定 ---
 base_path = Path(__file__).parent.parent
@@ -43,37 +43,46 @@ def init_db():
 
 init_db()
 
-# --- 3. 初始化 ChromaDB ---
+# --- 3. 初始化 ChromaDB (本地 Embedding) ---
 current_dir = Path(__file__).parent
 DB_PATH = current_dir / "chroma_db"
 client = chromadb.PersistentClient(path=str(DB_PATH))
 
-google_ef = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
-    api_key=GOOGLE_API_KEY,
-    model_name="models/text-embedding-004",
-    task_type="retrieval_query"
-)
+EMBED_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
+print(f"正在載入 embedding 模型：{EMBED_MODEL_NAME}")
+embed_model = SentenceTransformer(EMBED_MODEL_NAME)
 
 try:
-    collection = client.get_collection(name="legal_knowledge", embedding_function=google_ef)
-    print(f"✅ 向量資料庫連線成功，包含 {collection.count()} 條法規")
+    collection = client.get_collection(name="legal_knowledge")
+    print(f"向量資料庫連線成功，包含 {collection.count()} 條法規")
 except Exception as e:
-    print(f"❌ 資料庫連線失敗: {e}")
-    collection = client.get_or_create_collection(name="legal_knowledge", embedding_function=google_ef)
+    print(f"資料庫連線失敗: {e}")
+    collection = client.get_or_create_collection(name="legal_knowledge")
 
 # --- 4. 初始化 BM25 ---
 print("⏳ 正在載入 BM25 索引...")
-DATA_PATH = current_dir / "data" / "laws.json"
+ALL_LAWS_PATH = current_dir / "data" / "all_laws.json"
+LEGACY_LAWS_PATH = current_dir / "data" / "laws.json"
 all_laws = []
 bm25 = None
 
-if DATA_PATH.exists():
-    with open(DATA_PATH, "r", encoding="utf-8") as f:
+# 優先使用完整法規資料，否則 fallback 到精選版
+if ALL_LAWS_PATH.exists():
+    with open(ALL_LAWS_PATH, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+    # all_laws.json 使用 "content" 欄位，統一轉為 "text"
+    all_laws = [{"id": d["id"], "text": d["content"], "category": d.get("category", "")} for d in raw]
+    print(f"✅ 已載入完整法規: {len(all_laws)} 條")
+elif LEGACY_LAWS_PATH.exists():
+    with open(LEGACY_LAWS_PATH, "r", encoding="utf-8") as f:
         all_laws = json.load(f)
+    print(f"✅ 已載入精選法規: {len(all_laws)} 條")
+else:
+    print("⚠️ 警告：找不到任何法規資料")
+
+if all_laws:
     tokenized_corpus = [list(jieba.cut(doc['text'])) for doc in all_laws]
     bm25 = BM25Okapi(tokenized_corpus)
-else:
-    print("⚠️ 警告：找不到 laws.json")
 
 # --- 5. FastAPI 設定 ---
 app = FastAPI(title="Legal AI Assistant API")
@@ -94,9 +103,17 @@ class ChatRequest(BaseModel):
     style: str = "general"
     session_id: Optional[str] = None
     client_id: str
+    image: Optional[str] = None
+    image_type: Optional[str] = None
 
 class CreateSessionRequest(BaseModel):
     client_id: str
+
+class DocumentRequest(BaseModel):
+    doc_type: str
+    session_id: str
+    client_id: str
+    additional_info: Optional[str] = None
 
 # --- 核心功能 ---
 def expand_synonyms(query: str) -> str:
@@ -159,7 +176,8 @@ def hybrid_search(query: str):
                 final_docs.append({"text": doc['text'], "id": doc['id'], "score": 0.8})
                 seen_ids.add(doc['id'])
 
-    vector_results = collection.query(query_texts=[expanded_query], n_results=50)
+    query_embedding = embed_model.encode([expanded_query]).tolist()
+    vector_results = collection.query(query_embeddings=query_embedding, n_results=50)
     
     if vector_results['documents'] and vector_results['documents'][0]:
         for i, doc_text in enumerate(vector_results['documents'][0]):
@@ -181,10 +199,39 @@ def hybrid_search(query: str):
     final_docs.sort(key=lambda x: x['score'], reverse=True)
     return "\n\n".join([item['text'] for item in final_docs[:30]])
 
+# --- 建立法規名稱與 PCode 對照表 ---
+PCODE_MAP_PATH = current_dir / "data" / "pcode_map.json"
+LAW_NAME_TO_PCODE = {}
+if PCODE_MAP_PATH.exists():
+    with open(PCODE_MAP_PATH, "r", encoding="utf-8") as f:
+        LAW_NAME_TO_PCODE = json.load(f)
+    print(f"✅ 已載入 PCode 對照表: {len(LAW_NAME_TO_PCODE)} 筆")
+else:
+    print("⚠️ 找不到 pcode_map.json，法條連結可能無法正確產生")
+
+def analyze_image_with_gemini(image_base64: str, image_type: str = "image/jpeg", user_context: str = "") -> str:
+    """Use Gemini 2.5 Flash vision to analyze a legal document image."""
+    import base64 as b64_module
+    image_data = b64_module.b64decode(image_base64)
+    image_part = {"mime_type": image_type, "data": image_data}
+    analysis_prompt = f"""你是台灣法律文件分析專家。請仔細閱讀這張圖片，識別並提取以下資訊：
+1. 文件類型（罰單、合約、判決書、存證信函等）
+2. 所有關鍵法律資訊（日期、金額、違規事項、條文引用、當事人等）
+3. 重要條款或條文編號
+
+使用者補充說明：{user_context if user_context else '無'}
+
+請以結構化方式輸出提取的內容，方便後續法律分析。"""
+    vision_model = genai.GenerativeModel('gemini-2.5-flash')
+    response = vision_model.generate_content([analysis_prompt, image_part])
+    return response.text
+
+
 def query_gemini_rag(
     user_question: str,
     style: str,
     history: Optional[List[Dict[str, Any]]] = None,
+    image_analysis: Optional[str] = None,
 ):
     print(f"👤 使用者: {user_question} | 模式: {style}")
 
@@ -203,7 +250,11 @@ def query_gemini_rag(
     except:
         rewritten_query = user_question
 
-    context_text = hybrid_search(rewritten_query)
+    search_query = rewritten_query
+    if image_analysis:
+        search_query = f"{rewritten_query} {image_analysis[:200]}"
+
+    context_text = hybrid_search(search_query)
     if not context_text: context_text = "（資料庫中未找到直接相關法條）"
     
     system_role = "你是一位台灣法律 AI 顧問。你的職責是僅回答與【台灣法律】相關的問題。如果使用者的問題完全與法律無關（例如：早餐吃什麼、旅遊推薦、心情閒聊），請禮貌拒絕回答，並引導使用者詢問法律相關問題。"
@@ -227,17 +278,38 @@ def query_gemini_rag(
         case_instruction = "請舉一個【生活常見例子】（例如：在巷口擦撞機車...）來說明。"
         advice_instruction = "請列出 3 點【當下SOP】，教使用者第一時間該做什麼。"
 
+    image_section = ""
+    if image_analysis:
+        image_section = f"""
+    【圖片分析結果】：
+    使用者上傳了一張法律文件圖片，AI 視覺分析結果如下：
+    {image_analysis}
+    請結合此圖片分析結果與使用者問題進行回答。
+    """
+
     # Prompt
     final_prompt = f"""
     {system_role}
     語氣要求：{tone_instruction}
-    
+
+    【思維鏈分析 (Chain-of-Thought)】：
+    在回答之前，請先內部評估使用者問題的完整性：
+    - 如果使用者的描述缺少關鍵細節（例如：時間、地點、金額、傷亡情況、是否有和解等），
+      請在回答的「結論先行」之前，先列出你需要釐清的問題。
+    - 使用 ---FOLLOWUP_START--- 和 ---FOLLOWUP_END--- 標記包裹追問問題。
+    - 格式範例：
+      ---FOLLOWUP_START---
+      ["事故發生的確切時間和地點？", "對方是否有受傷？", "是否已經報警處理？"]
+      ---FOLLOWUP_END---
+    - 即使有追問，仍然要基於目前已知資訊給出初步分析。
+    - 如果使用者的問題已經足夠清楚，則不需要輸出追問區塊。
+
     {reference_section_title}（請嚴格基於此內容回答，若無相關內容請勿編造）：
     {context_text}
-    
+
     【歷史對話參考】：
     {history_text}
-    
+    {image_section}
     【使用者問題】：
     {user_question} (AI理解: {rewritten_query})
     
@@ -289,6 +361,16 @@ def query_gemini_rag(
 
     reply_content = reply_content.replace("---JSON_START---", "").replace("---JSON_END---", "").strip()
 
+    # 提取追問問題 (CoT Follow-up)
+    follow_up_questions = []
+    followup_match = re.search(r"---FOLLOWUP_START---(.*?)---FOLLOWUP_END---", reply_content, re.DOTALL)
+    if followup_match:
+        try:
+            follow_up_questions = json.loads(followup_match.group(1).strip())
+        except:
+            pass
+        reply_content = reply_content.replace(followup_match.group(0), "").strip()
+
     # ★ 核心修正：美化版連結產生器 (無黑點，強制垂直排列) ★
     def create_clean_link(title, content):
         # 1. 清理標題：移除粗體、移除所有空格 (解決全形半形排版問題)
@@ -301,12 +383,29 @@ def query_gemini_rag(
         # 2. 清理內容
         safe_content = content.replace("\n", "").replace("\r", "").strip()
         
-        # 3. Base64 編碼
-        b64_bytes = base64.b64encode(safe_content.encode('utf-8'))
+        # 3. Base64 編碼 (URL-safe: 用 - 和 _ 取代 + 和 /)
+        b64_bytes = base64.urlsafe_b64encode(safe_content.encode('utf-8'))
         b64_str = b64_bytes.decode('utf-8')
+
+        # 4. 解析 PCode 與 條號（支援 第24條之3 → flno=24-3）
+        pcode = ""
+        flno = ""
+        match = re.match(r"(.+?)第([\d-]+)條(?:之(\d+))?", title)
+        if match:
+            law_name = match.group(1)
+            flno = match.group(2)
+            if match.group(3):
+                flno = f"{flno}-{match.group(3)}"
+            pcode = LAW_NAME_TO_PCODE.get(law_name, "")
+            # 如果完全匹配找不到，嘗試模糊搜尋
+            if not pcode:
+                 for known_name, known_pcode in LAW_NAME_TO_PCODE.items():
+                     if len(known_name) > 2 and (known_name in law_name or law_name in known_name):
+                         pcode = known_pcode
+                         break
         
-        # 4. ★ 關鍵：使用 \n\n (雙換行) 強制分段，不用列表符號 ★
-        return f"\n\n[**{title}**](https://law.ai/view?data={b64_str})"
+        # 5. ★ 關鍵：使用 \n\n (雙換行) 強制分段，不用列表符號 ★
+        return f"\n\n[**{title}**](https://law.ai/view?pcode={pcode}&flno={flno}&data={b64_str})"
 
     # 處理 <ref> 標籤
     # 允許前面有 Markdown 條列符號 (*、-、+) 一起被吃掉，避免畫面殘留米字號
@@ -343,7 +442,7 @@ def query_gemini_rag(
     disclaimer = "\n\n\n> 本回覆僅供參考，不代表正式法律意見。實際個案請諮詢專業律師。"
     reply_content += disclaimer
 
-    return {"reply": reply_content, "analysis": analysis_data}
+    return {"reply": reply_content, "analysis": analysis_data, "follow_up_questions": follow_up_questions}
 
 # --- API 路由 ---
 @app.get("/")
@@ -422,20 +521,34 @@ async def chat(request: ChatRequest):
     history = [{"role": row[0], "content": row[1]} for row in reversed(rows)]
     
     try:
-        result = query_gemini_rag(request.message, request.style, history)
-        
+        # Analyze image if provided
+        image_analysis = None
+        if request.image:
+            try:
+                image_analysis = analyze_image_with_gemini(
+                    request.image,
+                    request.image_type or "image/jpeg",
+                    request.message
+                )
+            except Exception as img_err:
+                print(f"Image analysis error: {img_err}")
+
+        result = query_gemini_rag(request.message, request.style, history, image_analysis=image_analysis)
+
         ai_reply = result["reply"]
         analysis_data = result["analysis"]
-        
+        follow_up_questions = result.get("follow_up_questions", [])
+
         now = datetime.now().isoformat()
-        c.execute("INSERT INTO messages (session_id, role, content, analysis, created_at) VALUES (?, ?, ?, ?, ?)", (session_id, "user", request.message, None, now))
+        user_content = f"[圖片已上傳] {request.message}" if request.image else request.message
+        c.execute("INSERT INTO messages (session_id, role, content, analysis, created_at) VALUES (?, ?, ?, ?, ?)", (session_id, "user", user_content, None, now))
         c.execute("INSERT INTO messages (session_id, role, content, analysis, created_at) VALUES (?, ?, ?, ?, ?)", (session_id, "assistant", ai_reply, json.dumps(analysis_data), now))
-        
+
         c.execute("UPDATE sessions SET last_analysis = ? WHERE id = ?", (json.dumps(analysis_data), session_id))
-        
+
         conn.commit()
-        
-        return {"reply": ai_reply, "session_id": session_id, "analysis": analysis_data}
+
+        return {"reply": ai_reply, "session_id": session_id, "analysis": analysis_data, "follow_up_questions": follow_up_questions}
         
     except Exception as e:
         print(f"Error: {e}")
@@ -446,6 +559,97 @@ async def chat(request: ChatRequest):
         }
     finally:
         conn.close()
+
+@app.post("/generate-document")
+async def generate_document(request: DocumentRequest):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT id FROM sessions WHERE id = ? AND client_id = ?",
+              (request.session_id, request.client_id))
+    if not c.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    c.execute(
+        "SELECT role, content FROM messages WHERE session_id = ? ORDER BY id ASC",
+        (request.session_id,)
+    )
+    rows = c.fetchall()
+    conn.close()
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="No conversation history found")
+
+    history_text = "\n".join([
+        f"{'使用者' if r[0] == 'user' else 'AI助手'}: {r[1][:500]}"
+        for r in rows
+    ])
+
+    doc_templates = {
+        "存證信函": """請根據以下對話內容，生成一份台灣法律格式的【存證信函】。
+格式要求：
+1. 收件人資訊（如果對話中有提及）
+2. 發信人資訊（以「本人」代稱）
+3. 主旨
+4. 事實經過（按時間順序）
+5. 法律依據（引用具體法條）
+6. 訴求事項（具體要求）
+7. 結尾警語（限期回覆、否則依法追訴等）
+8. 發信日期""",
+        "和解協議書": """請根據以下對話內容，生成一份台灣法律格式的【和解協議書】。
+格式要求：
+1. 協議書標題
+2. 甲方、乙方資訊
+3. 事實緣由
+4. 和解條件（賠償金額、方式、期限）
+5. 雙方權利義務
+6. 違約條款
+7. 管轄法院
+8. 簽署欄""",
+        "行政申訴書": """請根據以下對話內容，生成一份台灣法律格式的【行政申訴書】。
+格式要求：
+1. 受理機關
+2. 申訴人資訊
+3. 申訴事項（原處分內容）
+4. 申訴理由（事實及法律依據）
+5. 請求事項（撤銷或變更處分）
+6. 證據清單
+7. 附件說明
+8. 申訴日期與簽名"""
+    }
+
+    template = doc_templates.get(request.doc_type, doc_templates["存證信函"])
+
+    prompt = f"""你是台灣法律文書撰寫專家。
+
+{template}
+
+【對話紀錄參考】：
+{history_text}
+
+{'【使用者補充資訊】：' + request.additional_info if request.additional_info else ''}
+
+重要注意事項：
+- 內容必須符合台灣法律格式
+- 所有法條引用必須正確
+- 個人資訊處以「OOO」或「XXX」代替，提醒使用者自行填寫
+- 金額、日期等如果不明確，用「___」代替
+- 最後加上免責聲明：此文書由 AI 輔助生成，建議正式使用前請律師審閱。
+
+請直接輸出文書內容，不需要額外解釋。"""
+
+    try:
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        response = model.generate_content(prompt)
+        return {
+            "document": response.text,
+            "doc_type": request.doc_type,
+            "session_id": request.session_id
+        }
+    except Exception as e:
+        print(f"Document generation error: {e}")
+        raise HTTPException(status_code=500, detail="文書生成失敗，請稍後再試")
+
 
 if __name__ == "__main__":
     import uvicorn

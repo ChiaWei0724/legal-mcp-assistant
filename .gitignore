@@ -24,8 +24,12 @@ Thumbs.db
 # Cursor/VS Code
 .vscode/
 
-# Vector DB (本地向量資料庫檔案)
+# Vector DB (本地向量資料庫檔案，太大不進版控)
 chroma_db/
 vector_db/
 
-!backend/chroma_db/
+# Data files (由腳本產生，不需進版控)
+backend/data/*.json
+
+# SQLite databases
+*.db

@@ -31,7 +31,9 @@ import {
   CheckCircle2,
   MicOff,
   Menu,
-  X
+  X,
+  Paperclip,
+  FileText,
 } from "lucide-react";
 
 declare global {
@@ -161,7 +163,9 @@ const extractTextFromNode = (node: any): string => {
 // ★ Base64 解碼 (支援 UTF-8)
 const b64DecodeUnicode = (str: string) => {
     try {
-        return decodeURIComponent(atob(str).split('').map(function(c) {
+        // 將 URL-safe Base64 (-_ ) 轉回標準 Base64 (+/)
+        const std = str.replace(/-/g, '+').replace(/_/g, '/');
+        return decodeURIComponent(atob(std).split('').map(function(c) {
             return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
         }).join(''));
     } catch (e) {
@@ -189,6 +193,8 @@ interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   analysis?: AnalysisData;
+  followUpQuestions?: string[];
+  image?: string;
 }
 
 type ViewState = "chat" | "team" | "info";
@@ -226,6 +232,19 @@ export default function Home() {
   const [clientId, setClientId] = useState<string>("");
   
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // Image upload state
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageType, setImageType] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Document generation state
+  const [showDocModal, setShowDocModal] = useState(false);
+  const [docType, setDocType] = useState<string>("存證信函");
+  const [generatedDoc, setGeneratedDoc] = useState<string>("");
+  const [isGeneratingDoc, setIsGeneratingDoc] = useState(false);
+  const [docCopied, setDocCopied] = useState(false);
 
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -349,9 +368,9 @@ export default function Home() {
         "道路交通管理處罰條例": "K0040012", "刑法": "C0000001", "中華民國刑法": "C0000001", "民法": "B0000001", "刑事訴訟法": "C0010001", "民事訴訟法": "B0010001"
     };
     let pcode = ""; let flno = "";
-    const match = text.match(/(.+?)第(\d+)條/);
+    const match = text.match(/(.+?)第([\d-]+)條(?:之(\d+))?/);
     if (match) {
-        const name = match[1].trim(); flno = match[2];
+        const name = match[1].trim(); flno = match[3] ? `${match[2]}-${match[3]}` : match[2];
         for (const key in lawMap) { if (name.includes(key) || key.includes(name)) { pcode = lawMap[key]; break; } }
     } else {
         for (const key in lawMap) { if (text.includes(key)) { pcode = lawMap[key]; break; } }
@@ -409,30 +428,82 @@ export default function Home() {
     setIsSidebarOpen(false);
   };
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      alert("圖片大小不能超過 10MB");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      alert("請選擇圖片檔案（JPG、PNG 等）");
+      return;
+    }
+    setImageType(file.type);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setImagePreview(dataUrl);
+      const base64 = dataUrl.split(",")[1];
+      setSelectedImage(base64);
+    };
+    reader.readAsDataURL(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleGenerateDocument = async () => {
+    if (!sessionId) return;
+    setIsGeneratingDoc(true); setGeneratedDoc("");
+    try {
+      const res = await fetch(`${API_URL}/generate-document`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ doc_type: docType, session_id: sessionId, client_id: clientId }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.error) {
+        setGeneratedDoc(`錯誤：${data.error}`);
+      } else {
+        setGeneratedDoc(data.document || "文書生成失敗");
+      }
+    } catch {
+      setGeneratedDoc("連線失敗，請確認後端是否運行中。");
+    } finally { setIsGeneratingDoc(false); }
+  };
+
   const handleSend = async (text: string = input) => {
     const trimmed = text.trim(); if (!trimmed || isLoading) return;
-    
+
     if (isListening && recognitionRef.current) {
         recognitionRef.current.stop();
         setIsListening(false);
     }
 
     if (currentView !== "chat") setCurrentView("chat");
-    const userMessage: ChatMessage = { role: "user", content: trimmed };
+    const userMessage: ChatMessage = { role: "user", content: trimmed, image: selectedImage || undefined };
     setMessages((prev) => [...prev, userMessage]); setInput(""); setIsLoading(true);
-    
+
+    const bodyPayload: any = { message: trimmed, style: chatStyle, session_id: sessionId, client_id: clientId };
+    if (selectedImage) {
+      bodyPayload.image = selectedImage;
+      bodyPayload.image_type = imageType || "image/jpeg";
+    }
+    setSelectedImage(null); setImagePreview(null); setImageType(null);
+
     try {
       const res = await fetch(`${API_URL}/chat`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed, style: chatStyle, session_id: sessionId, client_id: clientId }),
+        body: JSON.stringify(bodyPayload),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      
-      setMessages((prev) => [...prev, { 
-          role: "assistant", 
+
+      setMessages((prev) => [...prev, {
+          role: "assistant",
           content: data.reply,
-          analysis: data.analysis
+          analysis: data.analysis,
+          followUpQuestions: data.follow_up_questions || [],
       }]);
 
       if (!sessionId && data.session_id) { setSessionId(data.session_id); fetchSessions(clientId); }
@@ -475,19 +546,38 @@ export default function Home() {
         const hrefStr = href || "";
         
         // 攔截 Fake HTTPS
-        const isLawLink = hrefStr.startsWith("https://law.ai/view?data=");
+        const isLawLink = hrefStr.startsWith("https://law.ai/view");
         const rawText = extractTextFromNode(children); 
         
         if (isLawLink) {
             let decodedContent = "";
+            let pcode = "";
+            let flno = "";
+
             try {
-                const b64 = hrefStr.split("data=")[1];
-                decodedContent = b64DecodeUnicode(b64);
+                const urlObj = new URL(hrefStr);
+                pcode = urlObj.searchParams.get("pcode") || "";
+                flno = urlObj.searchParams.get("flno") || "";
+                const b64 = urlObj.searchParams.get("data") || "";
+                if (b64) decodedContent = b64DecodeUnicode(b64);
             } catch {
-                decodedContent = "無法讀取條文內容";
+                 // Fallback: 嘗試解析舊格式
+                 try {
+                    if (hrefStr.includes("data=")) {
+                        const b64 = hrefStr.split("data=")[1];
+                        decodedContent = b64DecodeUnicode(b64);
+                    }
+                 } catch {}
             }
+
+            if (!decodedContent) decodedContent = "無法讀取條文內容";
             
-            const realLink = getLawLink(rawText); 
+            let realLink = "";
+            if (pcode && flno) {
+                realLink = `https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode=${pcode}&flno=${flno}`;
+            } else {
+                realLink = getLawLink(rawText); 
+            }
             
             return (
                 <span 
@@ -501,10 +591,13 @@ export default function Home() {
         return <a href={href} className="text-blue-500 underline break-all hover:text-blue-600" target="_blank" {...props}>{children}</a>;
     },
     strong: ({node, ...props}: any) => <span className="font-bold text-indigo-600 dark:text-amber-400" {...props} />,
-    ul: (props: any) => <ul className="ml-5 list-disc space-y-2 my-2 text-slate-700 dark:text-slate-300" {...props} />,
-    li: (props: any) => <li className="pl-1" {...props} />,
-    h1: (props: any) => <h1 className="text-xl font-bold text-slate-900 dark:text-white my-3" {...props} />,
-    h2: (props: any) => <h2 className="text-lg font-bold text-slate-900 dark:text-white my-2" {...props} />,
+    ul: (props: any) => <ul className="ml-5 list-disc space-y-1.5 my-3 text-slate-700 dark:text-slate-300" {...props} />,
+    ol: (props: any) => <ol className="ml-5 list-decimal space-y-1.5 my-3 text-slate-700 dark:text-slate-300" {...props} />,
+    li: (props: any) => <li className="pl-1 leading-7" {...props} />,
+    h1: (props: any) => <h1 className="text-xl font-bold text-slate-900 dark:text-white mt-5 mb-2" {...props} />,
+    h2: (props: any) => <h2 className="text-lg font-bold text-slate-900 dark:text-white mt-4 mb-2 pb-1 border-b border-slate-200 dark:border-white/10" {...props} />,
+    h3: (props: any) => <h3 className="text-base font-bold text-slate-900 dark:text-white mt-3 mb-1" {...props} />,
+    hr: () => <hr className="my-4 border-slate-200 dark:border-white/10" />,
     blockquote: (props: any) => (
       <div className="mt-6 p-4 bg-slate-100/50 backdrop-blur-sm dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-red-900/30 flex gap-3 items-start shadow-inner">
           <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
@@ -574,7 +667,7 @@ export default function Home() {
                 <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-slate-900/50 p-6 md:p-8 shadow-sm">
                 <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-3"><BookOpenCheck className="text-emerald-500 dark:text-emerald-400" /> 作品說明</h2>
                 <div className="space-y-6 text-slate-700 dark:text-slate-300 leading-relaxed">
-                    <div><h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">關於「今日張三又犯法了嗎？」</h3><p>本系統結合生成式 AI 與法律資料庫，打造一個可用對話方式進行互動的智慧法律顧問。</p></div>
+                    <div><h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">關於「我的AI溢出就像雨水」</h3><p>本系統結合生成式 AI 與法律資料庫，打造一個可用對話方式進行互動的智慧法律顧問。</p></div>
                     <div><h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">核心技術架構</h3><ul className="list-disc list-inside space-y-2 ml-2"><li><span className="font-bold text-indigo-600 dark:text-indigo-400">RAG 雙軌檢索</span>：結合 ChromaDB 向量搜尋與 BM25 關鍵字搜尋。</li><li><span className="font-bold text-indigo-600 dark:text-indigo-400">AI 查詢改寫</span>：使用 Gemini 2.5 Flash 自動修正錯字。</li><li><span className="font-bold text-indigo-600 dark:text-indigo-400">互動式 UI</span>：提供即時的法條預覽與分析儀表板。</li></ul></div>
                 </div>
                 </div>
@@ -599,12 +692,26 @@ export default function Home() {
                         <div key={index} className="flex flex-col gap-2">
                             <div className={`flex w-full ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                                 <div className={`relative w-fit min-w-0 max-w-[95%] md:max-w-[85%] rounded-2xl px-4 py-3 shadow-sm ${fontSizeConfig[fontSize]} ${msg.role === "user" ? "bg-indigo-600 text-white ml-auto" : "bg-white dark:bg-slate-800/90 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-white/5 mr-auto"} overflow-hidden break-words`}>
+                                    {msg.role === "user" && msg.image && (
+                                      <div className="mb-2">
+                                        <img src={`data:image/jpeg;base64,${msg.image}`} alt="上傳圖片" className="max-w-[240px] max-h-[180px] rounded-lg object-cover border border-white/20" />
+                                      </div>
+                                    )}
                                     {msg.role === "user" ? <div className="whitespace-pre-wrap break-words">{msg.content}</div> : <ReactMarkdown urlTransform={(url) => url} components={markdownComponents}>{msg.content}</ReactMarkdown>}
                                 </div>
                             </div>
                             {msg.role === "assistant" && msg.analysis && (
                                 <div className="w-full max-w-[95%] md:max-w-[85%] mr-auto px-1">
                                     <AnalysisPanel data={msg.analysis} />
+                                </div>
+                            )}
+                            {msg.role === "assistant" && msg.followUpQuestions && msg.followUpQuestions.length > 0 && (
+                                <div className="w-full max-w-[95%] md:max-w-[85%] mr-auto px-1 flex flex-wrap gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                    {msg.followUpQuestions.map((q, qi) => (
+                                        <button key={qi} onClick={() => handleSend(q)} className="px-3 py-1.5 text-sm rounded-full border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 hover:border-indigo-300 dark:hover:border-indigo-400/50 transition-all active:scale-95 cursor-pointer">
+                                            {q}
+                                        </button>
+                                    ))}
                                 </div>
                             )}
                         </div>
@@ -622,15 +729,39 @@ export default function Home() {
                 )}
             </div>
 
+            {/* "生成法律文書" button */}
+            {sessionId && messages.length >= 2 && (
+              <div className="shrink-0 px-3 md:px-4 pt-2 flex justify-center">
+                <button onClick={() => { setShowDocModal(true); setGeneratedDoc(""); setDocCopied(false); }} className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-all active:scale-95">
+                  <FileText className="w-4 h-4" /> 生成法律文書
+                </button>
+              </div>
+            )}
+
             <div className="shrink-0 p-3 md:p-4 bg-transparent">
+                {/* Image preview strip */}
+                {imagePreview && (
+                  <div className="mb-2 flex items-center gap-2 px-2">
+                    <div className="relative group">
+                      <img src={imagePreview} alt="預覽" className="h-16 w-16 rounded-lg object-cover border border-slate-200 dark:border-white/10 shadow-sm" />
+                      <button onClick={() => { setSelectedImage(null); setImagePreview(null); setImageType(null); }} className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center shadow-md hover:bg-red-600 transition-colors">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">已選擇圖片，可搭配文字描述一起送出</span>
+                  </div>
+                )}
+
+                <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageSelect} className="hidden" />
+
                 <div className={`rounded-3xl border transition-all duration-300 relative flex flex-col bg-white dark:bg-slate-950/80 ${isListening ? 'border-red-400 shadow-[0_0_15px_rgba(248,113,113,0.3)] ring-2 ring-red-400/20' : 'border-slate-200 dark:border-white/10 shadow-lg dark:shadow-black/50 focus-within:ring-2 focus-within:ring-indigo-500/20'}`}>
-                    <textarea 
-                        value={input} 
-                        onChange={(e) => setInput(e.target.value)} 
-                        onKeyDown={handleKeyDown} 
-                        placeholder={isListening ? "正在聆聽中..." : "請用白話描述你的情況..."} 
-                        className="w-full bg-transparent border-0 px-5 pt-3 pb-10 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none resize-none min-h-[52px] rounded-3xl" 
-                        rows={1} 
+                    <textarea
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder={isListening ? "正在聆聽中..." : "請用白話描述你的情況..."}
+                        className="w-full bg-transparent border-0 px-5 pt-3 pb-10 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none resize-none min-h-[52px] rounded-3xl"
+                        rows={1}
                     />
                     <div className="absolute bottom-2 left-3 right-3 flex justify-between items-center">
                         <div className="relative" ref={modeMenuRef}>
@@ -649,11 +780,15 @@ export default function Home() {
                             )}
                         </div>
                         <div className="flex items-center gap-1">
+                             <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-slate-400 transition-colors" title="上傳圖片（罰單、合約等）">
+                               <Paperclip className="w-4 h-4" />
+                             </button>
+
                              {mounted && browserSupportsSpeechRecognition ? (
-                                <button 
-                                    type="button" 
-                                    onClick={toggleListening} 
-                                    className={`p-2 rounded-full transition-all duration-300 ${isListening ? 'bg-red-500 text-white animate-pulse shadow-red-500/50 shadow-lg scale-110' : 'hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-slate-400'}`} 
+                                <button
+                                    type="button"
+                                    onClick={toggleListening}
+                                    className={`p-2 rounded-full transition-all duration-300 ${isListening ? 'bg-red-500 text-white animate-pulse shadow-red-500/50 shadow-lg scale-110' : 'hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-slate-400'}`}
                                     title={isListening ? "停止錄音" : "語音輸入"}
                                 >
                                     {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
@@ -661,8 +796,8 @@ export default function Home() {
                              ) : (
                                 <button type="button" className="p-2 rounded-full text-slate-300 dark:text-slate-600 cursor-not-allowed" title="您的瀏覽器不支援語音輸入或正在載入中"><Mic className="w-4 h-4" /></button>
                              )}
-                             
-                             <button onClick={() => handleSend()} disabled={isLoading || !input.trim()} className={`p-2 rounded-full transition-all flex items-center justify-center ${input.trim() ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-500 active:scale-95' : 'bg-slate-100 dark:bg-white/5 text-slate-300 dark:text-slate-600 cursor-not-allowed'}`}><SendHorizontal className="h-4 w-4" /></button>
+
+                             <button onClick={() => handleSend()} disabled={isLoading || (!input.trim() && !selectedImage)} className={`p-2 rounded-full transition-all flex items-center justify-center ${(input.trim() || selectedImage) ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-500 active:scale-95' : 'bg-slate-100 dark:bg-white/5 text-slate-300 dark:text-slate-600 cursor-not-allowed'}`}><SendHorizontal className="h-4 w-4" /></button>
                         </div>
                     </div>
                 </div>
@@ -685,8 +820,8 @@ export default function Home() {
         `}>
             <div className="flex items-center justify-between mb-4">
                 <div>
-                    <p className="text-xs uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">NextWave 2025</p>
-                    <h2 className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-50 whitespace-nowrap">今日張三又犯法了嗎？</h2>
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">AI台灣法律顧問</p>
+                    <h2 className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-50 whitespace-nowrap">我的AI溢出就像雨水</h2>
                 </div>
                 <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-2 text-slate-500 hover:text-slate-800 dark:hover:text-white"><X className="w-6 h-6" /></button>
             </div>
@@ -730,7 +865,7 @@ export default function Home() {
                 <button onClick={() => setIsSidebarOpen(true)} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 text-slate-700 dark:text-slate-200">
                     <Menu className="w-6 h-6" />
                 </button>
-                <h1 className="text-base font-bold text-slate-800 dark:text-slate-100">今日張三又犯法了嗎？</h1>
+                <h1 className="text-base font-bold text-slate-800 dark:text-slate-100">我的AI溢出就像雨水</h1>
                 <ThemeToggle />
             </div>
 
@@ -747,6 +882,72 @@ export default function Home() {
 
         {activeTooltip && (
             <PortalTooltip content={activeTooltip.content} rect={activeTooltip.rect} linkUrl={activeTooltip.link} onMouseEnter={() => { if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current); }} onClose={() => setActiveTooltip(null)} />
+        )}
+
+        {/* Document Generation Modal */}
+        {showDocModal && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowDocModal(false)}>
+            <div className="w-full max-w-2xl mx-4 max-h-[85vh] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 flex flex-col animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+              {/* Modal header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-white/10">
+                <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-indigo-500" /> 生成法律文書
+                </h2>
+                <button onClick={() => setShowDocModal(false)} className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal body */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-5">
+                {/* Document type selector */}
+                <div>
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">選擇文書類型</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {[
+                      { type: "存證信函", desc: "正式通知對方法律權益主張", icon: "📄" },
+                      { type: "和解協議書", desc: "雙方和解的正式文書", icon: "🤝" },
+                      { type: "行政申訴書", desc: "對行政處分提出申訴", icon: "📋" },
+                    ].map((item) => (
+                      <button key={item.type} onClick={() => setDocType(item.type)} className={`p-4 rounded-xl border-2 text-left transition-all ${docType === item.type ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10" : "border-slate-200 dark:border-white/10 hover:border-indigo-300 dark:hover:border-indigo-500/30 hover:bg-slate-50 dark:hover:bg-white/5"}`}>
+                        <div className="text-2xl mb-2">{item.icon}</div>
+                        <div className={`text-sm font-bold ${docType === item.type ? "text-indigo-700 dark:text-indigo-300" : "text-slate-700 dark:text-slate-200"}`}>{item.type}</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">{item.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Generate button */}
+                <button onClick={handleGenerateDocument} disabled={isGeneratingDoc} className="w-full py-3 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 active:scale-[0.98]">
+                  {isGeneratingDoc ? (
+                    <><Hourglass className="w-4 h-4 animate-spin" /> AI 正在撰寫文書中...</>
+                  ) : (
+                    <><FileText className="w-4 h-4" /> 生成{docType}</>
+                  )}
+                </button>
+
+                {/* Generated document display */}
+                {generatedDoc && (
+                  <div className="space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-300">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">生成結果</p>
+                      <button onClick={async () => {
+                        try { await navigator.clipboard.writeText(generatedDoc); setDocCopied(true); setTimeout(() => setDocCopied(false), 2000); } catch {}
+                      }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-white/5 text-slate-600 dark:text-slate-300 transition-colors">
+                        {docCopied ? <><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> 已複製</> : <><Copy className="w-3.5 h-3.5" /> 複製全文</>}
+                      </button>
+                    </div>
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/10 max-h-[40vh] overflow-y-auto">
+                      <div className="whitespace-pre-wrap text-sm leading-7 text-slate-800 dark:text-slate-200 font-sans">
+                        {generatedDoc}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         )}
     </div>
   );

@@ -9,3 +9,5 @@ jieba
 numpy
 beautifulsoup4
 requests
+sentence-transformers
+lxml

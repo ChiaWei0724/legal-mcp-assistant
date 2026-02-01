@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NextWave 2025 - 法律 AI",
+  title: "AI台灣法律顧問",
   description: "你的個人法律顧問",
 };
 
