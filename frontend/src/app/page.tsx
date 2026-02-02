@@ -737,13 +737,143 @@ export default function Home() {
         return (
           <div className="flex-1 overflow-y-auto p-4 md:p-8 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-700">
             <div className="flex flex-col gap-6 animate-in fade-in duration-500">
+
+                {/* 專案簡介 */}
                 <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-slate-900/50 p-6 md:p-8 shadow-sm">
-                <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-3"><BookOpenCheck className="text-emerald-500 dark:text-emerald-400" /> 作品說明</h2>
-                <div className="space-y-6 text-slate-700 dark:text-slate-300 leading-relaxed">
-                    <div><h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">關於「我的AI溢出就像雨水」</h3><p>本系統結合生成式 AI 與法律資料庫，打造一個可用對話方式進行互動的智慧法律顧問。</p></div>
-                    <div><h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">核心技術架構</h3><ul className="list-disc list-inside space-y-2 ml-2"><li><span className="font-bold text-indigo-600 dark:text-indigo-400">RAG 雙軌檢索</span>：結合 ChromaDB 向量搜尋與 BM25 關鍵字搜尋。</li><li><span className="font-bold text-indigo-600 dark:text-indigo-400">AI 查詢改寫</span>：使用 Gemini 2.5 Flash 自動修正錯字。</li><li><span className="font-bold text-indigo-600 dark:text-indigo-400">互動式 UI</span>：提供即時的法條預覽與分析儀表板。</li></ul></div>
+                  <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-3"><BookOpenCheck className="text-emerald-500 dark:text-emerald-400" /> 作品說明</h2>
+                  <div className="space-y-4 text-slate-700 dark:text-slate-300 leading-relaxed">
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">關於「我的AI溢出就像雨水」</h3>
+                      <p>本系統是一個專為台灣民眾設計的 <span className="font-bold text-indigo-600 dark:text-indigo-400">AI 法律諮詢輔助系統</span>。我們觀察到許多民眾（如租屋族、車禍當事人）在面臨法律糾紛時，常因法條艱澀或資訊不對稱而感到無助。</p>
+                      <p className="mt-2">本系統採用 Google Gemini 2.5 Flash 作為核心大腦，結合 RAG（檢索增強生成）技術讀取全國法規資料庫共 <span className="font-bold text-indigo-600 dark:text-indigo-400">47,000+ 條法規</span>，提供即時、有憑有據且白話的法律分析。</p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2">
+                      <div className="p-4 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20">
+                        <p className="text-sm font-bold text-indigo-700 dark:text-indigo-300 mb-1">白話轉譯</p>
+                        <p className="text-xs text-slate-600 dark:text-slate-400">將複雜法條轉換為一般人聽得懂的建議</p>
+                      </div>
+                      <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20">
+                        <p className="text-sm font-bold text-emerald-700 dark:text-emerald-300 mb-1">有憑有據</p>
+                        <p className="text-xs text-slate-600 dark:text-slate-400">每條回答精準引用法規出處並提供原文連結</p>
+                      </div>
+                      <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-100 dark:border-amber-500/20">
+                        <p className="text-sm font-bold text-amber-700 dark:text-amber-300 mb-1">風險可視</p>
+                        <p className="text-xs text-slate-600 dark:text-slate-400">自動分析法律領域與風險等級，一目了然</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
+
+                {/* 功能亮點 */}
+                <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-slate-900/50 p-6 md:p-8 shadow-sm">
+                  <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-3"><Sparkles className="text-amber-500 dark:text-amber-400" /> 功能亮點</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/5">
+                      <p className="text-sm font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-2"><Scale className="w-4 h-4 text-indigo-500" /> 三種對話模式</p>
+                      <ul className="text-xs text-slate-600 dark:text-slate-400 space-y-1 ml-1">
+                        <li>- <span className="font-medium">專業律師模式</span>：嚴謹用語，引用實務判決案例</li>
+                        <li>- <span className="font-medium">一般民眾模式</span>：白話易懂，用生活例子解釋</li>
+                        <li>- <span className="font-medium">幽默風趣模式</span>：鄉民梗與比喻帶出法律知識</li>
+                      </ul>
+                    </div>
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/5">
+                      <p className="text-sm font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-2"><Activity className="w-4 h-4 text-emerald-500" /> AI 智慧判讀儀表板</p>
+                      <ul className="text-xs text-slate-600 dark:text-slate-400 space-y-1 ml-1">
+                        <li>- <span className="font-medium">領域識別</span>：自動判斷刑事、民事或行政領域</li>
+                        <li>- <span className="font-medium">風險評估</span>：標示高/中/低風險等級</li>
+                        <li>- <span className="font-medium">知識圖譜</span>：自動提取案件關鍵字標籤</li>
+                      </ul>
+                    </div>
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/5">
+                      <p className="text-sm font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-2"><Gavel className="w-4 h-4 text-amber-500" /> 法規快覽 Tooltip</p>
+                      <ul className="text-xs text-slate-600 dark:text-slate-400 space-y-1 ml-1">
+                        <li>- 法條連結滑鼠移入即顯示完整條文內容</li>
+                        <li>- 自動產生正確的全國法規資料庫連結</li>
+                        <li>- 支援一鍵複製條文原文</li>
+                      </ul>
+                    </div>
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/5">
+                      <p className="text-sm font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-2"><FileText className="w-4 h-4 text-purple-500" /> 法律文書生成</p>
+                      <ul className="text-xs text-slate-600 dark:text-slate-400 space-y-1 ml-1">
+                        <li>- 存證信函：正式通知對方法律權益主張</li>
+                        <li>- 和解協議書：雙方和解的正式文書</li>
+                        <li>- 行政申訴書：對行政處分提出申訴</li>
+                      </ul>
+                    </div>
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/5">
+                      <p className="text-sm font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-2"><Mic className="w-4 h-4 text-red-500" /> 語音輸入</p>
+                      <ul className="text-xs text-slate-600 dark:text-slate-400 space-y-1 ml-1">
+                        <li>- 使用 Web Speech API 即時語音辨識</li>
+                        <li>- 支援中文連續語音輸入</li>
+                        <li>- 可搭配文字同時編輯</li>
+                      </ul>
+                    </div>
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-white/5">
+                      <p className="text-sm font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-2"><Paperclip className="w-4 h-4 text-cyan-500" /> 圖片法律分析</p>
+                      <ul className="text-xs text-slate-600 dark:text-slate-400 space-y-1 ml-1">
+                        <li>- 上傳罰單、合約等法律文件圖片</li>
+                        <li>- Gemini Vision 自動辨識文件內容</li>
+                        <li>- AI 結合圖片與問題進行法律分析</li>
+                      </ul>
+                    </div>
+                  </div>
                 </div>
+
+                {/* 技術架構 */}
+                <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-slate-900/50 p-6 md:p-8 shadow-sm">
+                  <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-3"><Network className="text-indigo-500 dark:text-indigo-400" /> 技術架構</h2>
+                  <div className="space-y-4 text-slate-700 dark:text-slate-300">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-2">Frontend 前端</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {["Next.js 16", "React 19", "Tailwind CSS 4", "Lucide Icons", "ReactMarkdown", "Web Speech API"].map(t => (
+                          <span key={t} className="px-2.5 py-1 text-xs font-medium rounded-lg bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/20">{t}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-2">Backend 後端</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {["Python FastAPI", "SQLite", "ChromaDB", "BM25 (jieba)", "sentence-transformers"].map(t => (
+                          <span key={t} className="px-2.5 py-1 text-xs font-medium rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/20">{t}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-2">AI Core</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {["Google Gemini 2.5 Flash", "RAG 檢索增強生成", "Query Rewriting", "Chain-of-Thought", "Vision 圖片分析"].map(t => (
+                          <span key={t} className="px-2.5 py-1 text-xs font-medium rounded-lg bg-purple-50 text-purple-700 border border-purple-100 dark:bg-purple-500/10 dark:text-purple-300 dark:border-purple-500/20">{t}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-2">MCP Server</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {["Model Context Protocol", "法規搜尋 Tool", "風險分析 Tool", "文書生成 Tool", "SSE / stdio 雙模式"].map(t => (
+                          <span key={t} className="px-2.5 py-1 text-xs font-medium rounded-lg bg-amber-50 text-amber-700 border border-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20">{t}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-2">搜尋引擎 — 雙軌混合搜尋</h3>
+                      <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">結合 <span className="font-bold text-indigo-600 dark:text-indigo-400">Vector Search</span>（語意理解）與 <span className="font-bold text-indigo-600 dark:text-indigo-400">BM25</span>（關鍵字精準匹配）的混合式搜尋架構。內建同義詞擴充字典，自動將口語（如「打人」「酒測」）對應至法律用語（如「傷害罪」「酒精濃度檢定」），大幅提升搜尋召回率。</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 資料來源 */}
+                <div className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-slate-900/50 p-6 md:p-8 shadow-sm">
+                  <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-3 flex items-center gap-3"><Tag className="text-rose-500 dark:text-rose-400" /> 資料來源</h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">所有法規資料均透過<span className="font-bold text-indigo-600 dark:text-indigo-400">全國法規資料庫 Open API</span> 下載，涵蓋憲法、民法、刑法、行政法規等各類法律共 47,000+ 條。資料經 jieba 中文分詞後建立 BM25 索引，並使用 paraphrase-multilingual-MiniLM-L12-v2 模型產生語意向量存入 ChromaDB，實現高精度的雙軌檢索。</p>
+                </div>
+
+                {/* 免責聲明 */}
+                <div className="rounded-3xl border border-amber-200 dark:border-amber-500/20 bg-amber-50/50 dark:bg-amber-500/5 p-6 md:p-8 shadow-sm">
+                  <h2 className="text-xl font-bold text-amber-800 dark:text-amber-300 mb-3 flex items-center gap-3"><AlertTriangle className="text-amber-500" /> 免責聲明</h2>
+                  <p className="text-sm text-amber-900/70 dark:text-amber-200/70 leading-relaxed">本系統所提供之法律資訊僅供參考，不構成正式法律意見。系統回答基於全國法規資料庫公開法規進行檢索與生成，實際個案判決可能因證據、法官心證及最新修法而異。若有具體法律問題，請務必諮詢專業律師。</p>
+                </div>
+
             </div>
           </div>
         );
