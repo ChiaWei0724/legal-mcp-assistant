@@ -239,6 +239,10 @@ export default function Home() {
   const [imageType, setImageType] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Backend health status
+  const [backendStatus, setBackendStatus] = useState<"connecting" | "online" | "offline">("connecting");
+  const [lawCount, setLawCount] = useState<number>(0);
+
   // Document generation state
   const [showDocModal, setShowDocModal] = useState(false);
   const [docType, setDocType] = useState<string>("存證信函");
@@ -277,6 +281,27 @@ export default function Home() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading]);
+
+  // Backend health check
+  useEffect(() => {
+    const checkHealth = async () => {
+      try {
+        const res = await fetch(`${API_URL}/`, { signal: AbortSignal.timeout(5000) });
+        if (res.ok) {
+          const data = await res.json();
+          setBackendStatus("online");
+          setLawCount(data.law_count || 0);
+        } else {
+          setBackendStatus("offline");
+        }
+      } catch {
+        setBackendStatus("offline");
+      }
+    };
+    checkHealth();
+    const interval = setInterval(checkHealth, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const fontSizeConfig = {
     small: "text-sm",
@@ -683,8 +708,17 @@ export default function Home() {
           <div className="flex flex-1 flex-col relative h-full">
             <div className="flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-6 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-700 space-y-4">
                 {messages.length === 0 ? (
-                  <div className="flex h-full flex-col items-center justify-center text-slate-400 dark:text-slate-500 opacity-60">
-                    <Bot className="h-16 w-16 mb-4 text-indigo-200 dark:text-indigo-900/40" /><p className="text-lg font-medium">還沒有對話紀錄</p><p className="text-sm">試著問問看「闖紅燈罰多少？」</p>
+                  <div className="flex h-full flex-col items-center justify-center">
+                    <Bot className="h-16 w-16 mb-4 text-indigo-300 dark:text-indigo-800/60" />
+                    <p className="text-lg font-semibold text-slate-500 dark:text-slate-400">有什麼法律問題嗎？</p>
+                    <p className="text-sm text-slate-400 dark:text-slate-500 mb-6">選擇以下問題或自行輸入</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-lg w-full px-4">
+                      {["闖紅燈會被罰多少？", "車禍肇事逃逸怎麼辦？", "租屋押金可以扣嗎？", "被詐騙了要怎麼報案？"].map((q) => (
+                        <button key={q} onClick={() => handleSend(q)} className="px-4 py-3 text-sm text-left rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 hover:border-indigo-300 dark:hover:border-indigo-500/40 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all active:scale-[0.98]">
+                          {q}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 ) : (
                   <>
@@ -853,7 +887,19 @@ export default function Home() {
                     </div>
                 </div>
                 <div className="rounded-2xl border border-indigo-100 dark:border-white/5 bg-gradient-to-br from-indigo-50 via-white to-purple-50 dark:from-indigo-600 dark:via-indigo-500 dark:to-purple-600 p-3 shadow-sm dark:shadow-lg">
-                    <p className="text-xs text-indigo-900 dark:text-white/80">RAG 資料庫狀態</p><div className="mt-1 flex items-center gap-2"><span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span></span><p className="text-lg font-semibold tracking-tight text-indigo-700 dark:text-white animate-pulse">連線中</p></div>
+                    <p className="text-xs text-indigo-900 dark:text-white/80">RAG 資料庫狀態</p>
+                    <div className="mt-1 flex items-center gap-2">
+                        <span className="relative flex h-3 w-3">
+                            {backendStatus === "online" && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>}
+                            <span className={`relative inline-flex rounded-full h-3 w-3 ${backendStatus === "online" ? "bg-emerald-500" : backendStatus === "offline" ? "bg-red-500" : "bg-amber-400 animate-pulse"}`}></span>
+                        </span>
+                        <p className={`text-lg font-semibold tracking-tight ${backendStatus === "online" ? "text-indigo-700 dark:text-white" : backendStatus === "offline" ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-300 animate-pulse"}`}>
+                            {backendStatus === "online" ? "已連線" : backendStatus === "offline" ? "離線" : "連線中"}
+                        </p>
+                    </div>
+                    {backendStatus === "online" && lawCount > 0 && (
+                        <p className="mt-1 text-[10px] text-indigo-600/70 dark:text-white/50">{lawCount.toLocaleString()} 條法規已載入</p>
+                    )}
                 </div>
             </div>
         </aside>

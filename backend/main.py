@@ -446,7 +446,12 @@ def query_gemini_rag(
 
 # --- API 路由 ---
 @app.get("/")
-def read_root(): return {"message": "Legal AI Backend Running"}
+def read_root():
+    return {
+        "message": "Legal AI Backend Running",
+        "law_count": len(all_laws),
+        "pcode_count": len(LAW_NAME_TO_PCODE),
+    }
 
 @app.get("/sessions")
 def get_sessions(client_id: str = Query(..., description="使用者的唯一 ID")):
