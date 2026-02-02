@@ -243,12 +243,21 @@ export default function Home() {
   const [backendStatus, setBackendStatus] = useState<"connecting" | "online" | "offline">("connecting");
   const [lawCount, setLawCount] = useState<number>(0);
 
+  // Textarea auto-resize
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Scroll-to-bottom
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+
   // Document generation state
   const [showDocModal, setShowDocModal] = useState(false);
   const [docType, setDocType] = useState<string>("存證信函");
   const [generatedDoc, setGeneratedDoc] = useState<string>("");
   const [isGeneratingDoc, setIsGeneratingDoc] = useState(false);
   const [docCopied, setDocCopied] = useState(false);
+  const [docProgress, setDocProgress] = useState(0);
+  const docProgressRef = useRef<NodeJS.Timeout | null>(null);
 
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -302,6 +311,26 @@ export default function Home() {
     const interval = setInterval(checkHealth, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // Textarea auto-resize
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 150) + 'px';
+  }, [input]);
+
+  // Scroll-to-bottom detection
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      setShowScrollButton(distFromBottom > 200);
+    };
+    el.addEventListener('scroll', handleScroll);
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, [messages]);
 
   const fontSizeConfig = {
     small: "text-sm",
@@ -478,7 +507,18 @@ export default function Home() {
 
   const handleGenerateDocument = async () => {
     if (!sessionId) return;
-    setIsGeneratingDoc(true); setGeneratedDoc("");
+    setIsGeneratingDoc(true); setGeneratedDoc(""); setDocProgress(0);
+
+    // Simulated progress: accelerates to ~30%, then slows toward 90%
+    if (docProgressRef.current) clearInterval(docProgressRef.current);
+    docProgressRef.current = setInterval(() => {
+      setDocProgress(prev => {
+        if (prev >= 90) return prev;
+        const increment = prev < 30 ? 3 : prev < 60 ? 1.5 : 0.5;
+        return Math.min(prev + increment, 90);
+      });
+    }, 300);
+
     try {
       const res = await fetch(`${API_URL}/generate-document`, {
         method: "POST",
@@ -494,7 +534,11 @@ export default function Home() {
       }
     } catch {
       setGeneratedDoc("連線失敗，請確認後端是否運行中。");
-    } finally { setIsGeneratingDoc(false); }
+    } finally {
+      if (docProgressRef.current) clearInterval(docProgressRef.current);
+      setDocProgress(100);
+      setTimeout(() => setIsGeneratingDoc(false), 400);
+    }
   };
 
   const handleSend = async (text: string = input) => {
@@ -531,7 +575,11 @@ export default function Home() {
           followUpQuestions: data.follow_up_questions || [],
       }]);
 
-      if (!sessionId && data.session_id) { setSessionId(data.session_id); fetchSessions(clientId); }
+      if (!sessionId && data.session_id) {
+        setSessionId(data.session_id);
+        const autoTitle = trimmed.length > 25 ? trimmed.slice(0, 25) + '...' : trimmed;
+        setSessions(prev => [{ id: data.session_id, title: autoTitle }, ...prev]);
+      }
     } catch {
       setMessages((prev) => [ ...prev, { role: "assistant", content: "❌ 後端連線失敗，請確認伺服器是否運行中。" }, ]);
     } finally { setIsLoading(false); }
@@ -706,7 +754,8 @@ export default function Home() {
         const currentModeLabel = modeInfo[chatStyle].shortLabel;
         return (
           <div className="flex flex-1 flex-col relative h-full">
-            <div className="flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-6 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-700 space-y-4">
+            <div className="flex-1 relative overflow-hidden">
+              <div ref={chatScrollRef} className="h-full overflow-y-auto px-4 py-4 md:px-6 md:py-6 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-700 space-y-4">
                 {messages.length === 0 ? (
                   <div className="flex h-full flex-col items-center justify-center">
                     <Bot className="h-16 w-16 mb-4 text-indigo-300 dark:text-indigo-800/60" />
@@ -761,6 +810,16 @@ export default function Home() {
                     <div ref={messagesEndRef} className="h-4" />
                   </>
                 )}
+              </div>
+
+              {/* Scroll to bottom button */}
+              {showScrollButton && messages.length > 0 && (
+                <div className="absolute left-1/2 -translate-x-1/2 bottom-4 z-10 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                  <button onClick={() => { chatScrollRef.current?.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: 'smooth' }); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 shadow-lg text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-95">
+                    <ChevronDown className="w-4 h-4" /> 最新訊息
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* "生成法律文書" button */}
@@ -790,11 +849,12 @@ export default function Home() {
 
                 <div className={`rounded-3xl border transition-all duration-300 relative flex flex-col bg-white dark:bg-slate-950/80 ${isListening ? 'border-red-400 shadow-[0_0_15px_rgba(248,113,113,0.3)] ring-2 ring-red-400/20' : 'border-slate-200 dark:border-white/10 shadow-lg dark:shadow-black/50 focus-within:ring-2 focus-within:ring-indigo-500/20'}`}>
                     <textarea
+                        ref={textareaRef}
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={handleKeyDown}
                         placeholder={isListening ? "正在聆聽中..." : "請用白話描述你的情況..."}
-                        className="w-full bg-transparent border-0 px-5 pt-3 pb-10 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none resize-none min-h-[52px] rounded-3xl"
+                        className="w-full bg-transparent border-0 px-5 pt-3 pb-10 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none resize-none min-h-[52px] max-h-[150px] rounded-3xl"
                         rows={1}
                     />
                     <div className="absolute bottom-2 left-3 right-3 flex justify-between items-center">
@@ -835,7 +895,7 @@ export default function Home() {
                         </div>
                     </div>
                 </div>
-                <div className="mt-1 text-center"><p className="text-[9px] text-slate-400 dark:text-slate-500">Gemini 可能會顯示不準確的資訊，請務必再次確認。</p></div>
+                <div className="mt-1 flex justify-between items-center px-4"><p className="text-[9px] text-slate-400 dark:text-slate-500">Enter 送出 · Shift+Enter 換行</p><p className="text-[9px] text-slate-400 dark:text-slate-500">Gemini 可能會顯示不準確的資訊</p></div>
               </div>
           </div>
         );
@@ -911,17 +971,17 @@ export default function Home() {
                 <button onClick={() => setIsSidebarOpen(true)} className="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-white/10 text-slate-700 dark:text-slate-200">
                     <Menu className="w-6 h-6" />
                 </button>
-                <h1 className="text-base font-bold text-slate-800 dark:text-slate-100">我的AI溢出就像雨水</h1>
+                <h1 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">我的AI溢出就像雨水 <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${backendStatus === "online" ? "bg-emerald-500" : backendStatus === "offline" ? "bg-red-500" : "bg-amber-400 animate-pulse"}`}></span></h1>
                 <ThemeToggle />
             </div>
 
             {/* 電腦版右上角 Toggle */}
-            <div className="hidden lg:block absolute top-6 right-8 z-[100]">
+            <div className="hidden lg:flex justify-end px-8 pt-4 shrink-0">
                 <ThemeToggle />
             </div>
 
             {/* 內容渲染 */}
-            <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-transparent lg:rounded-3xl lg:border lg:border-slate-200 lg:dark:border-white/5 lg:bg-white/60 lg:dark:bg-slate-900/60 lg:shadow-xl lg:dark:shadow-black/30 lg:backdrop-blur lg:m-4">
+            <main className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-transparent lg:rounded-3xl lg:border lg:border-slate-200 lg:dark:border-white/5 lg:bg-white/60 lg:dark:bg-slate-900/60 lg:shadow-xl lg:dark:shadow-black/30 lg:backdrop-blur lg:mx-4 lg:mb-4 lg:mt-2">
                 {renderMainContent()}
             </main>
         </div>
@@ -972,6 +1032,21 @@ export default function Home() {
                     <><FileText className="w-4 h-4" /> 生成{docType}</>
                   )}
                 </button>
+
+                {/* Progress bar */}
+                {isGeneratingDoc && (
+                  <div className="space-y-2 animate-in fade-in duration-200">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        {docProgress < 30 ? "正在分析對話紀錄..." : docProgress < 60 ? "正在撰寫法律文書..." : docProgress < 90 ? "正在校對法條引用..." : "即將完成..."}
+                      </span>
+                      <span className="text-xs font-mono text-slate-500 dark:text-slate-400">{Math.round(docProgress)}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-300 ease-out" style={{ width: `${docProgress}%` }} />
+                    </div>
+                  </div>
+                )}
 
                 {/* Generated document display */}
                 {generatedDoc && (
