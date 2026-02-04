@@ -28,8 +28,8 @@ Thumbs.db
 chroma_db/
 vector_db/
 
-# Data files (由腳本產生，不需進版控)
-backend/data/*.json
+# Data files - 保留法規資料以供部署使用
+# backend/data/*.json  # 已取消註解，讓法規資料可以上傳
 
 # SQLite databases
 *.db
